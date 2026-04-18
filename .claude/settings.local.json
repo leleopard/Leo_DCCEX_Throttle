@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:dcc-ex.com)",
+      "Bash(pio run *)",
+      "Bash(py -c \"from PIL import Image; img = Image.open\\(r'C:\\\\Users\\\\stephane\\\\Desktop\\\\leo_DCC_throttle\\\\Gemini_Generated_Image_w23s57w23s57w23s.png'\\); print\\(img.size, img.mode\\)\")",
+      "Bash(py -c *)"
+    ]
+  }
+}
