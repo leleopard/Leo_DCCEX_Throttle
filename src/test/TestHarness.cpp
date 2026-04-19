@@ -3,7 +3,7 @@
 #include "../SharedTypes.h"
 
 static const int ADDRESSES[NUM_THROTTLES] = {
-    LOCO_ADDR_0, LOCO_ADDR_1, LOCO_ADDR_2, LOCO_ADDR_3
+    LOCO_ADDR_0, LOCO_ADDR_1
 };
 
 static void testTask(void *param) {

@@ -24,8 +24,6 @@ static void uiTask(void *param) {
     LocoState locoState[NUM_THROTTLES];
     locoState[0].address = LOCO_ADDR_0;
     locoState[1].address = LOCO_ADDR_1;
-    locoState[2].address = LOCO_ADDR_2;
-    locoState[3].address = LOCO_ADDR_3;
 
     Screen   activeScreen    = Screen::THROTTLE;
     bool     connected       = false;

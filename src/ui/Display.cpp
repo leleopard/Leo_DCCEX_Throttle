@@ -29,33 +29,33 @@ static constexpr uint16_t COL_BAR[4] = {
 // Layout constants — two sets, selected at compile time
 // ---------------------------------------------------------------------------
 #if DISPLAY_480
-// 480×320 — 4 × 120 px columns
+// 480×320
 static constexpr int W       = 480;
 static constexpr int H       = 320;
-static constexpr int COL_W   = 120;
+static constexpr int COL_W   = W / NUM_THROTTLES;
 // HDR_H = 32 — defined in Display.h as public constexpr
 static constexpr int BAR_Y   = 33;   // y  33-237
 static constexpr int BAR_H   = 205;
 static constexpr int SPD_Y   = 239;  // y 239-288
 static constexpr int SPD_H   = 50;
 static constexpr int DIR_Y   = 290;  // y 290-319
-static constexpr int BAR_MRG = 12;
+static constexpr int BAR_MRG = 16;
 
 static constexpr int ROSTER_HDR_H  = 48;
 static constexpr int ROSTER_ROW_H  = 36;
 static constexpr int STATUS_H      = 28;
 #else
-// 320×240 — 4 × 80 px columns
+// 320×240
 static constexpr int W       = 320;
 static constexpr int H       = 240;
-static constexpr int COL_W   = 80;
+static constexpr int COL_W   = W / NUM_THROTTLES;
 // HDR_H = 25 — defined in Display.h as public constexpr
 static constexpr int BAR_Y   = 26;   // y  26-173
 static constexpr int BAR_H   = 148;
 static constexpr int SPD_Y   = 174;  // y 174-207
 static constexpr int SPD_H   = 34;
 static constexpr int DIR_Y   = 208;  // y 208-239
-static constexpr int BAR_MRG = 8;
+static constexpr int BAR_MRG = 16;
 
 static constexpr int ROSTER_HDR_H  = 36;
 static constexpr int ROSTER_ROW_H  = 32;
@@ -109,7 +109,7 @@ void Display::drawStatusBar(bool connected) {
 // ---------------------------------------------------------------------------
 void Display::drawThrottleScreen(const LocoState *locos, int count, bool connected) {
     _tft.fillScreen(COL_BG);
-    for (int i = 1; i < 4; i++)
+    for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, 0, H, COL_DIVIDER);
     for (int i = 0; i < count && i < 4; i++)
         drawThrottleColumn(i, locos[i], connected);
