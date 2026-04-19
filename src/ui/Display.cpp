@@ -11,59 +11,77 @@
 // Colour palette
 // ---------------------------------------------------------------------------
 static constexpr uint16_t COL_BG       = TFT_BLACK;
-static constexpr uint16_t COL_HEADER   = 0x1082;   // near-black grey
+static constexpr uint16_t COL_HEADER   = 0x1082;
 static constexpr uint16_t COL_TEXT     = TFT_WHITE;
 static constexpr uint16_t COL_ACCENT   = TFT_YELLOW;
 static constexpr uint16_t COL_FWD      = TFT_GREEN;
 static constexpr uint16_t COL_REV      = TFT_RED;
-static constexpr uint16_t COL_BAR_BG   = 0x2104;   // dark grey
+static constexpr uint16_t COL_GAUGE_BG = 0x2104;   // dark grey arc background
 static constexpr uint16_t COL_DIVIDER  = 0x4208;
 static constexpr uint16_t COL_SELECTED = 0x1E3F;
 
-// Per-throttle bar colours
+// Per-throttle gauge colours
 static constexpr uint16_t COL_BAR[4] = {
     TFT_CYAN, TFT_GREEN, TFT_YELLOW, TFT_MAGENTA
 };
 
 // ---------------------------------------------------------------------------
-// Layout constants — two sets, selected at compile time
+// Screen & column dimensions
 // ---------------------------------------------------------------------------
 #if DISPLAY_480
-// 480×320
-static constexpr int W       = 480;
-static constexpr int H       = 320;
-static constexpr int COL_W   = W / NUM_THROTTLES;
-// HDR_H = 32 — defined in Display.h as public constexpr
-static constexpr int BAR_Y   = 33;   // y  33-237
-static constexpr int BAR_H   = 205;
-static constexpr int SPD_Y   = 239;  // y 239-288
-static constexpr int SPD_H   = 50;
-static constexpr int DIR_Y   = 290;  // y 290-319
-static constexpr int BAR_MRG = 16;
+static constexpr int W     = 480;
+static constexpr int H     = 320;
+#else
+static constexpr int W     = 320;
+static constexpr int H     = 240;
+#endif
+static constexpr int COL_W = W / NUM_THROTTLES;
+// HDR_H defined in Display.h as public constexpr
+static constexpr int HDR_H = Display::HDR_H;
+
+// ---------------------------------------------------------------------------
+// Gauge layout — speedometer arc from GAUGE_START to GAUGE_START+GAUGE_SWEEP
+// Angles in TFT_eSPI convention: 0 = 12 o'clock, clockwise.
+// Arc sweeps from ~8 o'clock (220°) clockwise via top to ~4 o'clock (140°).
+// ---------------------------------------------------------------------------
+static constexpr int   GAUGE_START = 220;   // start angle (degrees)
+static constexpr int   GAUGE_SWEEP = 280;   // total sweep (degrees)
+
+#if DISPLAY_480
+static constexpr int   GAUGE_R      = 100;  // outer radius
+static constexpr int   GAUGE_THICK  = 22;   // arc ring thickness
+static constexpr int   GAUGE_CY     = 148;  // gauge centre y
+static constexpr int   NEEDLE_R     = 74;   // needle length
+static constexpr int   NEEDLE_W     = 4;    // needle width (pixels)
+static constexpr int   HUB_R        = 10;   // centre hub radius
+static constexpr int   GAUGE_SPD_Y  = 210;  // speed text centre y (below arc endpoints)
+static constexpr int   GAUGE_DIR_Y  = 250;  // direction text centre y
+static constexpr int   SPD_BOX_W    = 100;  // clearance box for speed text
+static constexpr int   SPD_BOX_H    = 38;
+static constexpr int   DIR_BOX_W    = 80;
+static constexpr int   DIR_BOX_H    = 30;
 
 static constexpr int ROSTER_HDR_H  = 48;
 static constexpr int ROSTER_ROW_H  = 36;
 static constexpr int STATUS_H      = 28;
 #else
-// 320×240
-static constexpr int W       = 320;
-static constexpr int H       = 240;
-static constexpr int COL_W   = W / NUM_THROTTLES;
-// HDR_H = 25 — defined in Display.h as public constexpr
-static constexpr int BAR_Y   = 26;   // y  26-173
-static constexpr int BAR_H   = 148;
-static constexpr int SPD_Y   = 174;  // y 174-207
-static constexpr int SPD_H   = 34;
-static constexpr int DIR_Y   = 208;  // y 208-239
-static constexpr int BAR_MRG = 16;
+static constexpr int   GAUGE_R      = 68;
+static constexpr int   GAUGE_THICK  = 16;
+static constexpr int   GAUGE_CY     = 100;
+static constexpr int   NEEDLE_R     = 50;
+static constexpr int   NEEDLE_W     = 3;
+static constexpr int   HUB_R        = 7;
+static constexpr int   GAUGE_SPD_Y  = 148;
+static constexpr int   GAUGE_DIR_Y  = 178;
+static constexpr int   SPD_BOX_W    = 80;
+static constexpr int   SPD_BOX_H    = 32;
+static constexpr int   DIR_BOX_W    = 64;
+static constexpr int   DIR_BOX_H    = 24;
 
 static constexpr int ROSTER_HDR_H  = 36;
 static constexpr int ROSTER_ROW_H  = 32;
 static constexpr int STATUS_H      = 24;
 #endif
-
-// Bring HDR_H into file scope from the public class constant
-static constexpr int HDR_H = Display::HDR_H;
 
 // ---------------------------------------------------------------------------
 
@@ -73,55 +91,114 @@ void Display::begin() {
     digitalWrite(TFT_BL_PIN, HIGH);
 #endif
     _tft.init();
-    _tft.setRotation(1);   // landscape
+    _tft.setRotation(1);
     _tft.pushImage(0, 0, SCREEN_W, SCREEN_H, splash_pixels);
+
+    for (int i = 0; i < NUM_THROTTLES; i++)
+        _gaugeAngle[i] = GAUGE_START;
+
     delay(2000);
 }
 
 // ---------------------------------------------------------------------------
-// Roster helpers (shared with drawRosterScreen)
+// Gauge helpers
 // ---------------------------------------------------------------------------
-void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
-    _tft.fillRect(0, 0, W, ROSTER_HDR_H, bg);
-    _tft.setTextColor(fg, bg);
-    _tft.setTextSize(2);
-    _tft.setCursor(8, ROSTER_HDR_H / 4);
-    _tft.print(title);
+
+// Draw (or erase) a single needle at angleDeg using the given colour.
+void Display::drawGaugeNeedle(int col, float angleDeg, uint16_t color) {
+    int cx = col * COL_W + COL_W / 2;
+    int cy = GAUGE_CY;
+    float rad = angleDeg * DEG_TO_RAD;
+    int nx = cx + (int)(NEEDLE_R * sinf(rad));
+    int ny = cy - (int)(NEEDLE_R * cosf(rad));
+    _tft.drawWideLine(cx, cy, nx, ny, NEEDLE_W, color, color);
 }
 
-void Display::drawStatusBar(bool connected) {
-    int y = H - STATUS_H;
-    _tft.fillRect(0, y, W, STATUS_H, COL_BG);
-    _tft.setTextSize(1);
-    if (connected) {
-        _tft.setTextColor(TFT_GREEN, COL_BG);
-        _tft.setCursor(8, y + 8);
-        _tft.print("DCC-EX Connected");
-    } else {
-        _tft.setTextColor(TFT_RED, COL_BG);
-        _tft.setCursor(8, y + 8);
-        _tft.print("Connecting...");
+// Draw the arc, ticks, needle, and hub — assumes area is already clear or
+// caller has erased the old needle first.
+void Display::drawGauge(int col, const LocoState &loco) {
+    int cx = col * COL_W + COL_W / 2;
+    int cy = GAUGE_CY;
+
+    float needleAngle = GAUGE_START + (float)loco.speed / 126.0f * GAUGE_SWEEP;
+    _gaugeAngle[col] = needleAngle;
+
+    int ir = GAUGE_R - GAUGE_THICK;
+
+    // Background arc (full sweep, dark)
+    _tft.drawSmoothArc(cx, cy, GAUGE_R, ir,
+                        GAUGE_START, GAUGE_START + GAUGE_SWEEP,
+                        COL_GAUGE_BG, COL_BG);
+
+    // Filled arc (speed portion, coloured)
+    if (loco.speed > 0) {
+        _tft.drawSmoothArc(cx, cy, GAUGE_R, ir,
+                            GAUGE_START, (uint32_t)needleAngle,
+                            COL_BAR[col & 3], COL_BG);
     }
+
+    // Major tick marks at 0 / 25 / 50 / 75 / 100 %
+    for (int t = 0; t <= 4; t++) {
+        float tickRad = (GAUGE_START + t * GAUGE_SWEEP / 4.0f) * DEG_TO_RAD;
+        int x1 = cx + (int)((ir - 2)  * sinf(tickRad));
+        int y1 = cy - (int)((ir - 2)  * cosf(tickRad));
+        int x2 = cx + (int)((ir - 12) * sinf(tickRad));
+        int y2 = cy - (int)((ir - 12) * cosf(tickRad));
+        _tft.drawLine(x1, y1, x2, y2, COL_TEXT);
+    }
+
+    // Needle
+    drawGaugeNeedle(col, needleAngle, COL_TEXT);
+
+    // Hub: filled circle with dark centre for a ring effect
+    _tft.fillCircle(cx, cy, HUB_R,     COL_TEXT);
+    _tft.fillCircle(cx, cy, HUB_R - 3, COL_GAUGE_BG);
+}
+
+// Speed value and direction label in the gap below the gauge centre.
+void Display::drawGaugeTexts(int col, const LocoState &loco) {
+    int cx = col * COL_W + COL_W / 2;
+
+    // Speed
+    _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
+                  SPD_BOX_W, SPD_BOX_H, COL_BG);
+    _tft.setFreeFont(&FreeSansBold18pt7b);
+    _tft.setTextColor(COL_TEXT);
+    _tft.setTextDatum(MC_DATUM);
+    char spd[4];
+    snprintf(spd, sizeof(spd), "%d", loco.speed);
+    _tft.drawString(spd, cx, GAUGE_SPD_Y);
+
+    // Direction
+    _tft.fillRect(cx - DIR_BOX_W / 2, GAUGE_DIR_Y - DIR_BOX_H / 2,
+                  DIR_BOX_W, DIR_BOX_H, COL_BG);
+    _tft.setFreeFont(&FreeSansBold12pt7b);
+    _tft.setTextColor(loco.forward ? COL_FWD : COL_REV);
+    _tft.setTextDatum(MC_DATUM);
+    _tft.drawString(loco.forward ? "FWD" : "REV", cx, GAUGE_DIR_Y);
+
+    _tft.setTextFont(1);
+    _tft.setTextDatum(TL_DATUM);
 }
 
 // ---------------------------------------------------------------------------
-// Throttle screen — full redraw of all 4 columns
+// Throttle screen — full redraw of all columns
 // ---------------------------------------------------------------------------
 void Display::drawThrottleScreen(const LocoState *locos, int count, bool connected) {
     _tft.fillScreen(COL_BG);
     for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, 0, H, COL_DIVIDER);
-    for (int i = 0; i < count && i < 4; i++)
+    for (int i = 0; i < count && i < NUM_THROTTLES; i++)
         drawThrottleColumn(i, locos[i], connected);
 }
 
 // ---------------------------------------------------------------------------
-// Single column — called on encoder change to avoid full-screen redraws
+// Single column full redraw — header + gauge + texts
 // ---------------------------------------------------------------------------
 void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected) {
     int x = col * COL_W;
 
-    // --- Header ---
+    // Header
     _tft.fillRect(x, 0, COL_W - 1, HDR_H, COL_HEADER);
     _tft.fillCircle(x + COL_W - 11, HDR_H / 2, 4, connected ? TFT_GREEN : TFT_RED);
     _tft.setFreeFont(&FreeSans9pt7b);
@@ -130,68 +207,35 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     char addr[8];
     snprintf(addr, sizeof(addr), "#%d", loco.address);
     _tft.drawString(addr, x + (COL_W - 1 - 18) / 2, HDR_H / 2);
-
-    // --- Separator ---
     _tft.drawFastHLine(x, HDR_H, COL_W - 1, COL_DIVIDER);
 
-    // --- Vertical speed bar — draw filled + unfilled in one pass, no clear step ---
-    int bx     = x + BAR_MRG;
-    int bw     = COL_W - 1 - 2 * BAR_MRG;
-    int innerH = BAR_H - 2;
-    int fillH  = map(loco.speed, 0, 126, 0, innerH);
-    int emptyH = innerH - fillH;
-
-    _tft.drawRect(bx, BAR_Y, bw, BAR_H, COL_TEXT);
-    if (emptyH > 0)
-        _tft.fillRect(bx + 1, BAR_Y + 1,          bw - 2, emptyH, COL_BAR_BG);
-    if (fillH > 0)
-        _tft.fillRect(bx + 1, BAR_Y + 1 + emptyH, bw - 2, fillH,  COL_BAR[col & 3]);
-
-    // --- Speed value ---
-    _tft.fillRect(x, SPD_Y, COL_W - 1, SPD_H, COL_BG);
-    _tft.setFreeFont(&FreeSansBold18pt7b);
-    _tft.setTextColor(COL_TEXT);
-    _tft.setTextDatum(MC_DATUM);
-    char spd[4];
-    snprintf(spd, sizeof(spd), "%d", loco.speed);
-    _tft.drawString(spd, x + (COL_W - 1) / 2, SPD_Y + SPD_H / 2);
-
-    // --- Direction ---
-    _tft.fillRect(x, DIR_Y, COL_W - 1, H - DIR_Y, COL_BG);
-    _tft.setFreeFont(&FreeSansBold12pt7b);
-    _tft.setTextColor(loco.forward ? COL_FWD : COL_REV);
-    _tft.setTextDatum(MC_DATUM);
-    _tft.drawString(loco.forward ? "FWD" : "REV", x + (COL_W - 1) / 2, DIR_Y + (H - DIR_Y) / 2);
-
-    _tft.setTextFont(1);
-    _tft.setTextDatum(TL_DATUM);
+    // Clear gauge area and redraw
+    _tft.fillRect(x, HDR_H + 1, COL_W - 1, H - HDR_H - 1, COL_BG);
+    drawGauge(col, loco);
+    drawGaugeTexts(col, loco);
 }
 
 // ---------------------------------------------------------------------------
-// Speed-only update — bar + number, leaves header and direction untouched
+// Speed-only update — flicker-free:
+//   erase old needle → redraw arcs + ticks → draw new needle → update text
 // ---------------------------------------------------------------------------
 void Display::drawThrottleSpeed(int col, const LocoState &loco) {
-    int x      = col * COL_W;
-    int bx     = x + BAR_MRG;
-    int bw     = COL_W - 1 - 2 * BAR_MRG;
-    int innerH = BAR_H - 2;
-    int fillH  = map(loco.speed, 0, 126, 0, innerH);
-    int emptyH = innerH - fillH;
+    // 1. Erase old needle (draw in background colour)
+    drawGaugeNeedle(col, _gaugeAngle[col], COL_BG);
 
-    _tft.drawRect(bx, BAR_Y, bw, BAR_H, COL_TEXT);
-    if (emptyH > 0)
-        _tft.fillRect(bx + 1, BAR_Y + 1,          bw - 2, emptyH, COL_BAR_BG);
-    if (fillH > 0)
-        _tft.fillRect(bx + 1, BAR_Y + 1 + emptyH, bw - 2, fillH,  COL_BAR[col & 3]);
+    // 2. Redraw arcs, ticks, new needle, hub
+    drawGauge(col, loco);
 
-    _tft.fillRect(x, SPD_Y, COL_W - 1, SPD_H, COL_BG);
+    // 3. Speed text only (direction unchanged)
+    int cx = col * COL_W + COL_W / 2;
+    _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
+                  SPD_BOX_W, SPD_BOX_H, COL_BG);
     _tft.setFreeFont(&FreeSansBold18pt7b);
     _tft.setTextColor(COL_TEXT);
     _tft.setTextDatum(MC_DATUM);
     char spd[4];
     snprintf(spd, sizeof(spd), "%d", loco.speed);
-    _tft.drawString(spd, x + (COL_W - 1) / 2, SPD_Y + SPD_H / 2);
-
+    _tft.drawString(spd, cx, GAUGE_SPD_Y);
     _tft.setTextFont(1);
     _tft.setTextDatum(TL_DATUM);
 }
@@ -215,8 +259,8 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
     int visible = min(ROSTER_VISIBLE_ROWS, count - scrollOffset);
 
     for (int i = 0; i < visible; i++) {
-        int idx       = scrollOffset + i;
-        bool hilight  = (entries[idx].address == DEFAULT_LOCO_ADDRESS);
+        int idx        = scrollOffset + i;
+        bool hilight   = (entries[idx].address == DEFAULT_LOCO_ADDRESS);
         uint16_t rowBg = hilight ? COL_SELECTED : COL_BG;
 
         _tft.fillRect(0, y, W, ROSTER_ROW_H - 2, rowBg);
@@ -247,7 +291,33 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
 }
 
 // ---------------------------------------------------------------------------
-// Sleep / wake  (works on both ILI9341 and ST7796)
+// Roster helpers
+// ---------------------------------------------------------------------------
+void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
+    _tft.fillRect(0, 0, W, ROSTER_HDR_H, bg);
+    _tft.setTextColor(fg, bg);
+    _tft.setTextSize(2);
+    _tft.setCursor(8, ROSTER_HDR_H / 4);
+    _tft.print(title);
+}
+
+void Display::drawStatusBar(bool connected) {
+    int y = H - STATUS_H;
+    _tft.fillRect(0, y, W, STATUS_H, COL_BG);
+    _tft.setTextSize(1);
+    if (connected) {
+        _tft.setTextColor(TFT_GREEN, COL_BG);
+        _tft.setCursor(8, y + 8);
+        _tft.print("DCC-EX Connected");
+    } else {
+        _tft.setTextColor(TFT_RED, COL_BG);
+        _tft.setCursor(8, y + 8);
+        _tft.print("Connecting...");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sleep / wake
 // ---------------------------------------------------------------------------
 void Display::sleep() {
 #if TFT_BL_PIN >= 0
@@ -258,7 +328,7 @@ void Display::sleep() {
 
 void Display::wake() {
     _tft.writecommand(0x11);   // SLPOUT
-    delay(120);                // both ILI9341 and ST7796 require 120 ms before commands
+    delay(120);
 #if TFT_BL_PIN >= 0
     digitalWrite(TFT_BL_PIN, HIGH);
 #endif

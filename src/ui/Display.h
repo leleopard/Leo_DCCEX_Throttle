@@ -19,18 +19,22 @@ public:
 
     void drawThrottleScreen(const LocoState *locos, int count, bool connected);
     void drawThrottleColumn(int col, const LocoState &loco, bool connected);
-    void drawThrottleSpeed(int col, const LocoState &loco);   // bar + speed only
+    void drawThrottleSpeed(int col, const LocoState &loco);   // gauge + speed only, flicker-free
     void drawRosterScreen(const RosterEntry *entries, int count, int scrollOffset);
 
 #if DISPLAY_480
     bool getTouch(uint16_t &x, uint16_t &y);
-    void runCalibration(uint16_t* calData);   // draws UI, fills 5-value cal array
-    void applyCalibration(uint16_t* calData); // passes cal data to TFT_eSPI
+    void runCalibration(uint16_t* calData);
+    void applyCalibration(uint16_t* calData);
 #endif
 
 private:
     TFT_eSPI _tft;
+    float    _gaugeAngle[NUM_THROTTLES];   // current needle angle per slot (degrees)
 
     void drawHeader(const char *title, uint16_t bg, uint16_t fg);
     void drawStatusBar(bool connected);
+    void drawGauge(int col, const LocoState &loco);          // full gauge area redraw
+    void drawGaugeNeedle(int col, float angleDeg, uint16_t color); // single needle draw
+    void drawGaugeTexts(int col, const LocoState &loco);     // speed + direction text
 };
