@@ -271,4 +271,23 @@ void Display::wake() {
 bool Display::getTouch(uint16_t &x, uint16_t &y) {
     return _tft.getTouch(&x, &y);
 }
+
+void Display::runCalibration(uint16_t* calData) {
+    _tft.fillScreen(TFT_BLACK);
+    _tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    _tft.setTextDatum(MC_DATUM);
+    _tft.setFreeFont(&FreeSansBold12pt7b);
+    _tft.drawString("Touch Calibration", W / 2, H / 2 - 30);
+    _tft.setFreeFont(&FreeSans9pt7b);
+    _tft.drawString("Tap each corner marker", W / 2, H / 2 + 10);
+    _tft.drawString("Hold ROSTER at boot to recalibrate", W / 2, H / 2 + 40);
+    _tft.setTextFont(1);
+    _tft.setTextDatum(TL_DATUM);
+    delay(2000);
+    _tft.calibrateTouch(calData, TFT_WHITE, TFT_BLACK, 15);
+}
+
+void Display::applyCalibration(uint16_t* calData) {
+    _tft.setTouch(calData);
+}
 #endif

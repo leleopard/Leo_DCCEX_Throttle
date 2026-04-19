@@ -24,6 +24,8 @@ public:
 
 #if DISPLAY_480
     bool getTouch(uint16_t &x, uint16_t &y);
+    void runCalibration(uint16_t* calData);   // draws UI, fills 5-value cal array
+    void applyCalibration(uint16_t* calData); // passes cal data to TFT_eSPI
 #endif
 
 private:

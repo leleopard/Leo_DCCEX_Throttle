@@ -3,6 +3,9 @@
 #include "../SharedTypes.h"
 #include "../ui/Display.h"
 #include "../input/EncoderManager.h"
+#if DISPLAY_480
+#include <Preferences.h>
+#endif
 
 extern RosterEntry       rosterEntries[MAX_ROSTER_SIZE];
 extern int               rosterCount;
@@ -15,8 +18,35 @@ static void uiTask(void *param) {
     QueueHandle_t eventQueue = queues[0];
     QueueHandle_t cmdQueue   = queues[1];
 
+    // Check for forced recalibration before splash (hold BTN_ROSTER at power-on)
+#if DISPLAY_480
+    pinMode(BTN_ROSTER, INPUT_PULLUP);
+    delay(50);
+    bool forceCalibration = (digitalRead(BTN_ROSTER) == LOW);
+#endif
+
     static Display display;
     display.begin();
+
+    // Load or run touch calibration
+#if DISPLAY_480
+    {
+        Preferences prefs;
+        uint16_t calData[5] = {};
+        prefs.begin("touch", true);
+        bool hasCal = prefs.isKey("cal");
+        if (hasCal) prefs.getBytes("cal", calData, sizeof(calData));
+        prefs.end();
+
+        if (!hasCal || forceCalibration) {
+            display.runCalibration(calData);
+            prefs.begin("touch", false);
+            prefs.putBytes("cal", calData, sizeof(calData));
+            prefs.end();
+        }
+        display.applyCalibration(calData);
+    }
+#endif
 
     static EncoderManager encoders;
     encoders.begin();
