@@ -136,35 +136,19 @@ static void uiTask(void *param) {
         }
 
         // --- Touch input (ST7796 only) ---
-        // Header tap  → toggle roster screen
-        // Body tap    → toggle direction for tapped column (throttle screen)
-        // Body tap    → scroll roster up/down (roster screen)
+        // Tap throttle screen → toggle direction for tapped column
+        // Tap roster screen  → scroll up (upper half) or down (lower half)
         // Any tap while sleeping → wake only, no action
+        // Note: roster screen is toggled by the physical BTN_ROSTER button.
+        // Touch coordinate calibration is not yet applied — header-zone
+        // detection removed until calibration is implemented.
 #if DISPLAY_480
         {
             uint16_t tx, ty;
             if (display.getTouch(tx, ty)) {
                 bool wasSleeping = noteActivity();
                 if (!wasSleeping) {
-                    if (ty <= (uint16_t)(Display::HDR_H + 10)) {
-                        // Header tap — toggle roster
-                        if (activeScreen == Screen::THROTTLE) {
-                            activeScreen = Screen::ROSTER;
-                            rosterScroll = 0;
-                            if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                                display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
-                                xSemaphoreGive(rosterMutex);
-                            }
-                            if (!rosterReady) {
-                                UICmd cmd{ UICmdType::REQUEST_ROSTER, 0, {} };
-                                xQueueSend(cmdQueue, &cmd, 0);
-                            }
-                        } else {
-                            activeScreen = Screen::THROTTLE;
-                            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
-                        }
-                    } else if (activeScreen == Screen::THROTTLE) {
-                        // Body tap — toggle direction for tapped column
+                    if (activeScreen == Screen::THROTTLE) {
                         int col = tx / (SCREEN_W / NUM_THROTTLES);
                         if (col >= 0 && col < NUM_THROTTLES) {
                             locoState[col].forward = !locoState[col].forward;
