@@ -22,6 +22,7 @@
 | 1.6 | As a developer, I want the project in version control so that changes are tracked and reversible. | ✅ |
 | 1.7 | As a developer, I want a top-level `DISPLAY_480` compile flag so that the firmware can target either the 320×240 ILI9341 or the 480×320 ST7796 display without code changes. | ✅ |
 | 1.8 | As an operator, I want the display to sleep after 1 minute of inactivity so that screen burn-in is prevented and power is saved. | ✅ |
+| 1.9 | As a developer, I want touch input on the ST7796 to toggle loco direction by tapping a throttle column so that the screen can be used as an alternative to encoder clicks. | ✅ |
 
 ---
 
