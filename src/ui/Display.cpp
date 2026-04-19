@@ -1,6 +1,11 @@
 #include "Display.h"
 #include "../config.h"
-#include "splash.h"
+
+#if DISPLAY_480
+#  include "splash_480.h"
+#else
+#  include "splash.h"
+#endif
 
 // ---------------------------------------------------------------------------
 // Colour palette
@@ -21,23 +26,41 @@ static constexpr uint16_t COL_BAR[4] = {
 };
 
 // ---------------------------------------------------------------------------
-// Throttle column layout  (320 wide × 240 tall, 4 × 80px columns)
+// Layout constants — two sets, selected at compile time
 // ---------------------------------------------------------------------------
+#if DISPLAY_480
+// 480×320 — 4 × 120 px columns
+static constexpr int W       = 480;
+static constexpr int H       = 320;
+static constexpr int COL_W   = 120;
+static constexpr int HDR_H   = 32;   // y  0-31
+static constexpr int BAR_Y   = 33;   // y  33-237
+static constexpr int BAR_H   = 205;
+static constexpr int SPD_Y   = 239;  // y 239-288
+static constexpr int SPD_H   = 50;
+static constexpr int DIR_Y   = 290;  // y 290-319
+static constexpr int BAR_MRG = 12;
+
+static constexpr int ROSTER_HDR_H  = 48;
+static constexpr int ROSTER_ROW_H  = 36;
+static constexpr int STATUS_H      = 28;
+#else
+// 320×240 — 4 × 80 px columns
 static constexpr int W       = 320;
 static constexpr int H       = 240;
-static constexpr int COL_W   = 80;    // 320 / 4
-static constexpr int HDR_H   = 25;    // y 0-24
-static constexpr int BAR_Y   = 26;    // y 26-173  (1px separator at y=25)
+static constexpr int COL_W   = 80;
+static constexpr int HDR_H   = 25;   // y  0-24
+static constexpr int BAR_Y   = 26;   // y  26-173
 static constexpr int BAR_H   = 148;
-static constexpr int SPD_Y   = 174;   // y 174-207  (FreeSansBold18 ~26px)
+static constexpr int SPD_Y   = 174;  // y 174-207
 static constexpr int SPD_H   = 34;
-static constexpr int DIR_Y   = 208;   // y 208-239  (FreeSansBold12 ~18px)
-static constexpr int BAR_MRG = 8;     // horizontal bar margin inside column
+static constexpr int DIR_Y   = 208;  // y 208-239
+static constexpr int BAR_MRG = 8;
 
-// Roster layout
 static constexpr int ROSTER_HDR_H  = 36;
 static constexpr int ROSTER_ROW_H  = 32;
 static constexpr int STATUS_H      = 24;
+#endif
 
 // ---------------------------------------------------------------------------
 
@@ -47,8 +70,8 @@ void Display::begin() {
     digitalWrite(TFT_BL_PIN, HIGH);
 #endif
     _tft.init();
-    _tft.setRotation(1);   // landscape 320×240
-    _tft.pushImage(0, 0, 320, 240, splash_pixels);
+    _tft.setRotation(1);   // landscape
+    _tft.pushImage(0, 0, SCREEN_W, SCREEN_H, splash_pixels);
     delay(2000);
 }
 
@@ -59,7 +82,7 @@ void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
     _tft.fillRect(0, 0, W, ROSTER_HDR_H, bg);
     _tft.setTextColor(fg, bg);
     _tft.setTextSize(2);
-    _tft.setCursor(8, 10);
+    _tft.setCursor(8, ROSTER_HDR_H / 4);
     _tft.print(title);
 }
 
@@ -103,10 +126,10 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     _tft.setTextDatum(MC_DATUM);
     char addr[8];
     snprintf(addr, sizeof(addr), "#%d", loco.address);
-    _tft.drawString(addr, x + 30, HDR_H / 2);
+    _tft.drawString(addr, x + (COL_W - 1 - 18) / 2, HDR_H / 2);
 
     // --- Separator ---
-    _tft.drawFastHLine(x, 25, COL_W - 1, COL_DIVIDER);
+    _tft.drawFastHLine(x, HDR_H, COL_W - 1, COL_DIVIDER);
 
     // --- Vertical speed bar — draw filled + unfilled in one pass, no clear step ---
     int bx     = x + BAR_MRG;
@@ -137,7 +160,6 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     _tft.setTextDatum(MC_DATUM);
     _tft.drawString(loco.forward ? "FWD" : "REV", x + (COL_W - 1) / 2, DIR_Y + (H - DIR_Y) / 2);
 
-    // Reset to built-in font for any subsequent default-font drawing
     _tft.setTextFont(1);
     _tft.setTextDatum(TL_DATUM);
 }
@@ -220,3 +242,12 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
         _tft.print(msg);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Touch (ST7796 / XPT2046 only)
+// ---------------------------------------------------------------------------
+#if DISPLAY_480
+bool Display::getTouch(uint16_t &x, uint16_t &y) {
+    return _tft.getTouch(&x, &y);
+}
+#endif

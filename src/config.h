@@ -45,6 +45,32 @@
 #define BTN_ESTOP   15   // Emergency stop
 
 // ---------------------------------------------------------------------------
+// Display selection
+// Set DISPLAY_480 = 1 for the 4" 480×320 ST7796 display.
+// When building via PlatformIO this is set automatically by the environment
+// ([env:ili9341] → 0, [env:st7796] → 1).
+// ---------------------------------------------------------------------------
+#ifndef DISPLAY_480
+#define DISPLAY_480  0
+#endif
+
+#if DISPLAY_480
+#  define SCREEN_W  480
+#  define SCREEN_H  320
+#else
+#  define SCREEN_W  320
+#  define SCREEN_H  240
+#endif
+
+// ---------------------------------------------------------------------------
+// Touch pins (ST7796 / XPT2046 only — ignored when DISPLAY_480 == 0)
+// TOUCH_CS is also set in platformio.ini so TFT_eSPI picks it up.
+// Touch SPI shares MISO/MOSI/SCLK with the display.
+// ---------------------------------------------------------------------------
+#define TOUCH_CS_PIN   5    // TODO: update to match your wiring
+#define TOUCH_IRQ_PIN  36   // TODO: update, or define -1 to disable IRQ
+
+// ---------------------------------------------------------------------------
 // TFT pins (CS not connected — tied low on display board)
 // MISO/MOSI/SCLK/DC/RST are set in platformio.ini for TFT_eSPI
 // ---------------------------------------------------------------------------

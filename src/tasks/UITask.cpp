@@ -105,6 +105,24 @@ static void uiTask(void *param) {
             }
         }
 
+        // --- Touch: column tap toggles direction (ST7796 only) ---
+#if DISPLAY_480
+        if (activeScreen == Screen::THROTTLE) {
+            uint16_t tx, ty;
+            if (display.getTouch(tx, ty)) {
+                int col = tx / (SCREEN_W / NUM_THROTTLES);
+                if (col >= 0 && col < NUM_THROTTLES) {
+                    locoState[col].forward = !locoState[col].forward;
+                    locoState[col].speed   = 0;
+                    display.drawThrottleColumn(col, locoState[col], connected);
+                    UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, locoState[col] };
+                    xQueueSend(cmdQueue, &cmd, 0);
+                    vTaskDelay(pdMS_TO_TICKS(300));   // debounce tap
+                }
+            }
+        }
+#endif
+
         // --- Encoder 0: roster scroll ---
         if (activeScreen == Screen::ROSTER) {
             int delta = encoders.getDelta(0);
