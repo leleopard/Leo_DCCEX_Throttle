@@ -7,11 +7,16 @@ class Display {
 public:
 #if DISPLAY_480
     static constexpr int ROSTER_VISIBLE_ROWS = 6;
+    static constexpr int HDR_H               = 32;
 #else
     static constexpr int ROSTER_VISIBLE_ROWS = 5;
+    static constexpr int HDR_H               = 25;
 #endif
 
     void begin();
+    void sleep();
+    void wake();
+
     void drawThrottleScreen(const LocoState *locos, int count, bool connected);
     void drawThrottleColumn(int col, const LocoState &loco, bool connected);
     void drawThrottleSpeed(int col, const LocoState &loco);   // bar + speed only

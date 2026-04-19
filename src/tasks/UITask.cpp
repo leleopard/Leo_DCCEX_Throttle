@@ -27,15 +27,45 @@ static void uiTask(void *param) {
     locoState[2].address = LOCO_ADDR_2;
     locoState[3].address = LOCO_ADDR_3;
 
-    Screen activeScreen = Screen::THROTTLE;
-    bool   connected    = false;
-    bool   rosterReady  = false;
-    int    rosterScroll = 0;
+    Screen   activeScreen    = Screen::THROTTLE;
+    bool     connected       = false;
+    bool     rosterReady     = false;
+    int      rosterScroll    = 0;
+    bool     displaySleeping = false;
+    uint32_t lastActivityMs  = millis();
 
+#if !DISPLAY_480
     bool rosterBtnPrev = HIGH;
-    bool estopBtnPrev  = HIGH;
+#endif
+    bool estopBtnPrev = HIGH;
 
     display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+
+    // Redraw whichever screen is active (called after waking)
+    auto redrawActive = [&]() {
+        if (activeScreen == Screen::THROTTLE) {
+            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+        } else {
+            if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
+                xSemaphoreGive(rosterMutex);
+            }
+        }
+    };
+
+    // Call on any user input. Resets the sleep timer.
+    // Returns true if the display was sleeping — caller should skip the action
+    // so the first interaction just wakes the screen.
+    auto noteActivity = [&]() -> bool {
+        lastActivityMs = millis();
+        if (displaySleeping) {
+            displaySleeping = false;
+            display.wake();
+            redrawActive();
+            return true;
+        }
+        return false;
+    };
 
     DCCEvent evt;
     for (;;) {
@@ -44,19 +74,19 @@ static void uiTask(void *param) {
             switch (evt.type) {
                 case DCCEventType::CONNECTED:
                     connected = true;
-                    if (activeScreen == Screen::THROTTLE)
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
                         display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
                     break;
 
                 case DCCEventType::DISCONNECTED:
                     connected = false;
-                    if (activeScreen == Screen::THROTTLE)
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
                         display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
                     break;
 
                 case DCCEventType::ROSTER_READY:
                     rosterReady = true;
-                    if (activeScreen == Screen::ROSTER) {
+                    if (!displaySleeping && activeScreen == Screen::ROSTER) {
                         if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                             display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
                             xSemaphoreGive(rosterMutex);
@@ -69,7 +99,7 @@ static void uiTask(void *param) {
                         if (evt.loco.address == locoState[i].address) {
                             bool dirChanged = (evt.loco.forward != locoState[i].forward);
                             locoState[i] = evt.loco;
-                            if (activeScreen == Screen::THROTTLE) {
+                            if (!displaySleeping && activeScreen == Screen::THROTTLE) {
                                 if (dirChanged)
                                     display.drawThrottleColumn(i, locoState[i], connected);
                                 else
@@ -87,6 +117,7 @@ static void uiTask(void *param) {
             for (int i = 0; i < NUM_THROTTLES; i++) {
                 int delta = encoders.getDelta(i);
                 if (delta != 0) {
+                    noteActivity();   // wake if sleeping, then apply change
                     int newSpeed = constrain(locoState[i].speed + delta * SPEED_STEP, 0, 126);
                     if (newSpeed != locoState[i].speed) {
                         locoState[i].speed = newSpeed;
@@ -96,6 +127,7 @@ static void uiTask(void *param) {
                     }
                 }
                 if (encoders.wasClicked(i)) {
+                    noteActivity();
                     locoState[i].forward = !locoState[i].forward;
                     locoState[i].speed   = 0;
                     display.drawThrottleColumn(i, locoState[i], connected);
@@ -105,20 +137,58 @@ static void uiTask(void *param) {
             }
         }
 
-        // --- Touch: column tap toggles direction (ST7796 only) ---
+        // --- Touch input (ST7796 only) ---
+        // Header tap  → toggle roster screen
+        // Body tap    → toggle direction for tapped column (throttle screen)
+        // Body tap    → scroll roster up/down (roster screen)
+        // Any tap while sleeping → wake only, no action
 #if DISPLAY_480
-        if (activeScreen == Screen::THROTTLE) {
+        {
             uint16_t tx, ty;
             if (display.getTouch(tx, ty)) {
-                int col = tx / (SCREEN_W / NUM_THROTTLES);
-                if (col >= 0 && col < NUM_THROTTLES) {
-                    locoState[col].forward = !locoState[col].forward;
-                    locoState[col].speed   = 0;
-                    display.drawThrottleColumn(col, locoState[col], connected);
-                    UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, locoState[col] };
-                    xQueueSend(cmdQueue, &cmd, 0);
-                    vTaskDelay(pdMS_TO_TICKS(300));   // debounce tap
+                bool wasSleeping = noteActivity();
+                if (!wasSleeping) {
+                    if (ty <= (uint16_t)(Display::HDR_H + 10)) {
+                        // Header tap — toggle roster
+                        if (activeScreen == Screen::THROTTLE) {
+                            activeScreen = Screen::ROSTER;
+                            rosterScroll = 0;
+                            if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
+                                xSemaphoreGive(rosterMutex);
+                            }
+                            if (!rosterReady) {
+                                UICmd cmd{ UICmdType::REQUEST_ROSTER, 0, {} };
+                                xQueueSend(cmdQueue, &cmd, 0);
+                            }
+                        } else {
+                            activeScreen = Screen::THROTTLE;
+                            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                        }
+                    } else if (activeScreen == Screen::THROTTLE) {
+                        // Body tap — toggle direction for tapped column
+                        int col = tx / (SCREEN_W / NUM_THROTTLES);
+                        if (col >= 0 && col < NUM_THROTTLES) {
+                            locoState[col].forward = !locoState[col].forward;
+                            locoState[col].speed   = 0;
+                            display.drawThrottleColumn(col, locoState[col], connected);
+                            UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, locoState[col] };
+                            xQueueSend(cmdQueue, &cmd, 0);
+                        }
+                    } else {
+                        // Roster screen — tap upper half scrolls up, lower half scrolls down
+                        int newScroll = rosterScroll + (ty < SCREEN_H / 2 ? -1 : 1);
+                        newScroll = constrain(newScroll, 0, max(0, rosterCount - Display::ROSTER_VISIBLE_ROWS));
+                        if (newScroll != rosterScroll) {
+                            rosterScroll = newScroll;
+                            if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
+                                xSemaphoreGive(rosterMutex);
+                            }
+                        }
+                    }
                 }
+                vTaskDelay(pdMS_TO_TICKS(300));   // debounce tap
             }
         }
 #endif
@@ -127,6 +197,7 @@ static void uiTask(void *param) {
         if (activeScreen == Screen::ROSTER) {
             int delta = encoders.getDelta(0);
             if (delta != 0) {
+                noteActivity();
                 rosterScroll = constrain(rosterScroll + delta, 0,
                                          max(0, rosterCount - Display::ROSTER_VISIBLE_ROWS));
                 if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
@@ -136,38 +207,60 @@ static void uiTask(void *param) {
             }
         }
 
-        // --- Roster button ---
-        bool rosterBtnNow = digitalRead(BTN_ROSTER);
-        if (rosterBtnPrev == HIGH && rosterBtnNow == LOW) {
-            if (activeScreen == Screen::THROTTLE) {
-                activeScreen = Screen::ROSTER;
-                rosterScroll = 0;
-                if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                    display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
-                    xSemaphoreGive(rosterMutex);
+        // --- Roster button (physical button, ILI9341 build only) ---
+        // In the ST7796 build GPIO 0 is TOUCH_CS — do not read it as a button.
+#if !DISPLAY_480
+        {
+            bool rosterBtnNow = digitalRead(BTN_ROSTER);
+            if (rosterBtnPrev == HIGH && rosterBtnNow == LOW) {
+                if (!noteActivity()) {
+                    if (activeScreen == Screen::THROTTLE) {
+                        activeScreen = Screen::ROSTER;
+                        rosterScroll = 0;
+                        if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                            display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
+                            xSemaphoreGive(rosterMutex);
+                        }
+                        if (!rosterReady) {
+                            UICmd cmd{ UICmdType::REQUEST_ROSTER, 0, {} };
+                            xQueueSend(cmdQueue, &cmd, 0);
+                        }
+                    } else {
+                        activeScreen = Screen::THROTTLE;
+                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                    }
                 }
-                if (!rosterReady) {
-                    UICmd cmd{ UICmdType::REQUEST_ROSTER, 0, {} };
-                    xQueueSend(cmdQueue, &cmd, 0);
-                }
-            } else {
-                activeScreen = Screen::THROTTLE;
-                display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
             }
+            rosterBtnPrev = rosterBtnNow;
         }
-        rosterBtnPrev = rosterBtnNow;
+#endif
 
-        // --- E-stop button ---
-        bool estopBtnNow = digitalRead(BTN_ESTOP);
-        if (estopBtnPrev == HIGH && estopBtnNow == LOW) {
-            for (int i = 0; i < NUM_THROTTLES; i++)
-                locoState[i].speed = 0;
-            UICmd cmd{ UICmdType::EMERGENCY_STOP, 0, {} };
-            xQueueSend(cmdQueue, &cmd, 0);
-            if (activeScreen == Screen::THROTTLE)
-                display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+        // --- E-stop button (always active, wakes display immediately) ---
+        {
+            bool estopBtnNow = digitalRead(BTN_ESTOP);
+            if (estopBtnPrev == HIGH && estopBtnNow == LOW) {
+                for (int i = 0; i < NUM_THROTTLES; i++)
+                    locoState[i].speed = 0;
+                UICmd cmd{ UICmdType::EMERGENCY_STOP, 0, {} };
+                xQueueSend(cmdQueue, &cmd, 0);
+                lastActivityMs = millis();
+                if (displaySleeping) {
+                    displaySleeping = false;
+                    display.wake();
+                }
+                if (activeScreen == Screen::THROTTLE)
+                    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+            }
+            estopBtnPrev = estopBtnNow;
         }
-        estopBtnPrev = estopBtnNow;
+
+        // --- Inactivity sleep ---
+#if SLEEP_TIMEOUT_MS > 0
+        if (!displaySleeping && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
+            displaySleeping = true;
+            display.sleep();
+        }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }

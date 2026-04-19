@@ -66,15 +66,26 @@
 // Touch pins (ST7796 / XPT2046 only — ignored when DISPLAY_480 == 0)
 // TOUCH_CS is also set in platformio.ini so TFT_eSPI picks it up.
 // Touch SPI shares MISO/MOSI/SCLK with the display.
+// GPIO 0 is freed from BTN_ROSTER in the ST7796 build (screen toggled by touch).
 // ---------------------------------------------------------------------------
-#define TOUCH_CS_PIN   5    // TODO: update to match your wiring
-#define TOUCH_IRQ_PIN  36   // TODO: update, or define -1 to disable IRQ
+#define TOUCH_CS_PIN   0    // T_CS  — also frees BTN_ROSTER for ST7796 build
+#define TOUCH_IRQ_PIN  36   // T_IRQ — input-only pin, ideal for interrupt
 
 // ---------------------------------------------------------------------------
 // TFT pins (CS not connected — tied low on display board)
 // MISO/MOSI/SCLK/DC/RST are set in platformio.ini for TFT_eSPI
+// ST7796 BL pin on GPIO 5 — ILI9341 BL tied to 3.3V (no software control)
 // ---------------------------------------------------------------------------
-#define TFT_BL_PIN  -1   // Backlight GPIO, or -1 if tied to 3.3V
+#if DISPLAY_480
+#  define TFT_BL_PIN   5
+#else
+#  define TFT_BL_PIN  -1
+#endif
+
+// ---------------------------------------------------------------------------
+// Display sleep — inactivity timeout before backlight + display IC sleep
+// ---------------------------------------------------------------------------
+#define SLEEP_TIMEOUT_MS  60000UL   // 1 minute; set 0 to disable
 
 // ---------------------------------------------------------------------------
 // Throttle behaviour

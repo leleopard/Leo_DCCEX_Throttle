@@ -33,7 +33,7 @@ static constexpr uint16_t COL_BAR[4] = {
 static constexpr int W       = 480;
 static constexpr int H       = 320;
 static constexpr int COL_W   = 120;
-static constexpr int HDR_H   = 32;   // y  0-31
+// HDR_H = 32 — defined in Display.h as public constexpr
 static constexpr int BAR_Y   = 33;   // y  33-237
 static constexpr int BAR_H   = 205;
 static constexpr int SPD_Y   = 239;  // y 239-288
@@ -49,7 +49,7 @@ static constexpr int STATUS_H      = 28;
 static constexpr int W       = 320;
 static constexpr int H       = 240;
 static constexpr int COL_W   = 80;
-static constexpr int HDR_H   = 25;   // y  0-24
+// HDR_H = 25 — defined in Display.h as public constexpr
 static constexpr int BAR_Y   = 26;   // y  26-173
 static constexpr int BAR_H   = 148;
 static constexpr int SPD_Y   = 174;  // y 174-207
@@ -61,6 +61,9 @@ static constexpr int ROSTER_HDR_H  = 36;
 static constexpr int ROSTER_ROW_H  = 32;
 static constexpr int STATUS_H      = 24;
 #endif
+
+// Bring HDR_H into file scope from the public class constant
+static constexpr int HDR_H = Display::HDR_H;
 
 // ---------------------------------------------------------------------------
 
@@ -241,6 +244,24 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
                  scrollOffset + 1, scrollOffset + visible, count);
         _tft.print(msg);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Sleep / wake  (works on both ILI9341 and ST7796)
+// ---------------------------------------------------------------------------
+void Display::sleep() {
+#if TFT_BL_PIN >= 0
+    digitalWrite(TFT_BL_PIN, LOW);
+#endif
+    _tft.writecommand(0x10);   // SLPIN
+}
+
+void Display::wake() {
+    _tft.writecommand(0x11);   // SLPOUT
+    delay(120);                // both ILI9341 and ST7796 require 120 ms before commands
+#if TFT_BL_PIN >= 0
+    digitalWrite(TFT_BL_PIN, HIGH);
+#endif
 }
 
 // ---------------------------------------------------------------------------
