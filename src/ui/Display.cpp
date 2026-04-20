@@ -16,11 +16,18 @@ static constexpr uint16_t COL_TEXT     = TFT_WHITE;
 static constexpr uint16_t COL_ACCENT   = TFT_YELLOW;
 static constexpr uint16_t COL_FWD      = TFT_GREEN;
 static constexpr uint16_t COL_REV      = TFT_RED;
-static constexpr uint16_t COL_GAUGE_BG = 0x2104;   // dark grey arc background
+static constexpr uint16_t COL_GAUGE_BG = 0x2104;
 static constexpr uint16_t COL_DIVIDER  = 0x4208;
 static constexpr uint16_t COL_SELECTED = 0x1E3F;
+static constexpr uint16_t COL_NEEDLE   = TFT_RED;
+static constexpr uint16_t DIAL_BG      = 0x1082;   // charcoal dial face
 
-// Per-throttle gauge colours
+// Chrome bezel layers: dark shadow → bright highlight → mid → bright → dark
+static constexpr uint16_t CHR_DARK   = 0x2104;
+static constexpr uint16_t CHR_MED    = 0x738E;
+static constexpr uint16_t CHR_BRIGHT = 0xEF7D;
+
+// Per-throttle arc fill colours
 static constexpr uint16_t COL_BAR[4] = {
     TFT_CYAN, TFT_GREEN, TFT_YELLOW, TFT_MAGENTA
 };
@@ -36,55 +43,76 @@ static constexpr int W     = 320;
 static constexpr int H     = 240;
 #endif
 static constexpr int COL_W = W / NUM_THROTTLES;
-// HDR_H defined in Display.h as public constexpr
 static constexpr int HDR_H = Display::HDR_H;
 
 // ---------------------------------------------------------------------------
-// Gauge layout — speedometer arc from GAUGE_START to GAUGE_START+GAUGE_SWEEP
-// Angles in TFT_eSPI convention: 0 = 12 o'clock, clockwise.
-// Arc sweeps from ~8 o'clock (220°) clockwise via top to ~4 o'clock (140°).
+// Gauge layout
+// Angles: TFT_eSPI convention 0=12 o'clock, CW.
+// Arc sweeps from 8 o'clock (220°) to 4 o'clock (220+280=500° ≡ 140°).
 // ---------------------------------------------------------------------------
-static constexpr int   GAUGE_START = 220;   // start angle (degrees)
-static constexpr int   GAUGE_SWEEP = 280;   // total sweep (degrees)
+static constexpr int GAUGE_START = 220;
+static constexpr int GAUGE_SWEEP = 280;
 
 #if DISPLAY_480
-static constexpr int   GAUGE_R      = 100;  // outer radius
-static constexpr int   GAUGE_THICK  = 22;   // arc ring thickness
-static constexpr int   GAUGE_CY     = 148;  // gauge centre y
-static constexpr int   NEEDLE_R     = 74;   // needle length
-static constexpr int   NEEDLE_W     = 4;    // needle width (pixels)
-static constexpr int   HUB_R        = 10;   // centre hub radius
-static constexpr int   GAUGE_SPD_Y  = 210;  // speed text centre y (below arc endpoints)
-static constexpr int   GAUGE_DIR_Y  = 250;  // direction text centre y
-static constexpr int   SPD_BOX_W    = 100;  // clearance box for speed text
-static constexpr int   SPD_BOX_H    = 38;
-static constexpr int   DIR_BOX_W    = 80;
-static constexpr int   DIR_BOX_H    = 30;
+static constexpr int GAUGE_R     = 100;  // outer bezel radius
+static constexpr int BEZEL_W     = 8;    // chrome ring width
+static constexpr int GAUGE_THICK = 20;   // arc ring thickness
+static constexpr int GAUGE_CY    = 145;  // gauge centre y
 
-static constexpr int ROSTER_HDR_H  = 48;
-static constexpr int ROSTER_ROW_H  = 36;
-static constexpr int STATUS_H      = 28;
+// ARC_R = GAUGE_R - BEZEL_W (arc drawn inside bezel)
+static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 92
+static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 72
+
+static constexpr int NEEDLE_R    = 78;
+static constexpr int NEEDLE_W    = 4;
+static constexpr int HUB_R       = 10;
+
+static constexpr int TICK_OUTER  = ARC_IR - 1;              // 71
+static constexpr int TICK_MAJ_IN = ARC_IR - 17;             // 55
+static constexpr int TICK_MIN_IN = ARC_IR - 9;              // 63
+static constexpr int LABEL_R     = ARC_IR - 27;             // 45
+
+static constexpr int GAUGE_SPD_Y = 262;
+static constexpr int GAUGE_DIR_Y = 290;
+static constexpr int SPD_BOX_W   = 100;
+static constexpr int SPD_BOX_H   = 38;
+static constexpr int DIR_BOX_W   = 80;
+static constexpr int DIR_BOX_H   = 30;
+
+static constexpr int ROSTER_HDR_H = 48;
+static constexpr int ROSTER_ROW_H = 36;
+static constexpr int STATUS_H     = 28;
 #else
-static constexpr int   GAUGE_R      = 68;
-static constexpr int   GAUGE_THICK  = 16;
-static constexpr int   GAUGE_CY     = 100;
-static constexpr int   NEEDLE_R     = 50;
-static constexpr int   NEEDLE_W     = 3;
-static constexpr int   HUB_R        = 7;
-static constexpr int   GAUGE_SPD_Y  = 148;
-static constexpr int   GAUGE_DIR_Y  = 178;
-static constexpr int   SPD_BOX_W    = 80;
-static constexpr int   SPD_BOX_H    = 32;
-static constexpr int   DIR_BOX_W    = 64;
-static constexpr int   DIR_BOX_H    = 24;
+static constexpr int GAUGE_R     = 68;
+static constexpr int BEZEL_W     = 6;
+static constexpr int GAUGE_THICK = 14;
+static constexpr int GAUGE_CY    = 100;
 
-static constexpr int ROSTER_HDR_H  = 36;
-static constexpr int ROSTER_ROW_H  = 32;
-static constexpr int STATUS_H      = 24;
+static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 62
+static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 48
+
+static constexpr int NEEDLE_R    = 52;
+static constexpr int NEEDLE_W    = 3;
+static constexpr int HUB_R       = 7;
+
+static constexpr int TICK_OUTER  = ARC_IR - 1;              // 47
+static constexpr int TICK_MAJ_IN = ARC_IR - 12;             // 36
+static constexpr int TICK_MIN_IN = ARC_IR - 6;              // 42
+static constexpr int LABEL_R     = ARC_IR - 20;             // 28
+
+static constexpr int GAUGE_SPD_Y = 185;
+static constexpr int GAUGE_DIR_Y = 210;
+static constexpr int SPD_BOX_W   = 80;
+static constexpr int SPD_BOX_H   = 30;
+static constexpr int DIR_BOX_W   = 64;
+static constexpr int DIR_BOX_H   = 24;
+
+static constexpr int ROSTER_HDR_H = 36;
+static constexpr int ROSTER_ROW_H = 32;
+static constexpr int STATUS_H     = 24;
 #endif
 
 // ---------------------------------------------------------------------------
-
 void Display::begin() {
 #if TFT_BL_PIN >= 0
     pinMode(TFT_BL_PIN, OUTPUT);
@@ -101,65 +129,96 @@ void Display::begin() {
 }
 
 // ---------------------------------------------------------------------------
-// Gauge helpers
+// Gauge layer helpers
 // ---------------------------------------------------------------------------
+
+// Chrome bezel (concentric rings dark→bright→mid→bright→dark) + charcoal dial face.
+// Pattern: outermost 1px dark, 1px bright, (BEZEL_W-4) px mid, 1px bright, 1px dark,
+// then dial face fills the remainder.  Works for any BEZEL_W >= 4.
+void Display::drawBezelAndDial(int col) {
+    int cx = col * COL_W + COL_W / 2;
+    int cy = GAUGE_CY;
+    _tft.fillCircle(cx, cy, GAUGE_R,               CHR_DARK);
+    _tft.fillCircle(cx, cy, GAUGE_R - 1,           CHR_BRIGHT);
+    _tft.fillCircle(cx, cy, GAUGE_R - 2,           CHR_MED);
+    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W + 2, CHR_BRIGHT);
+    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W + 1, CHR_DARK);
+    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W,     DIAL_BG);
+}
+
+// 21 tick positions over 280° (14° per step).
+// Major ticks every 4 steps (positions 0,4,8,12,16,20 = labels 0,25,50,76,101,126).
+void Display::drawGaugeTicks(int col) {
+    int cx = col * COL_W + COL_W / 2;
+    int cy = GAUGE_CY;
+
+    static const char *labels[] = { "0", "25", "50", "76", "101", "126" };
+
+    for (int t = 0; t <= 20; t++) {
+        float angle = (GAUGE_START + t * GAUGE_SWEEP / 20.0f) * DEG_TO_RAD;
+        float sinA  = sinf(angle);
+        float cosA  = cosf(angle);
+        bool  major = (t % 4 == 0);
+        int   r2    = major ? TICK_MAJ_IN : TICK_MIN_IN;
+
+        _tft.drawLine(cx + (int)(TICK_OUTER * sinA), cy - (int)(TICK_OUTER * cosA),
+                      cx + (int)(r2          * sinA), cy - (int)(r2          * cosA),
+                      COL_TEXT);
+
+        if (major) {
+            int lx = cx + (int)(LABEL_R * sinA);
+            int ly = cy - (int)(LABEL_R * cosA);
+            _tft.setTextFont(1);
+            _tft.setTextDatum(MC_DATUM);
+            _tft.setTextColor(COL_TEXT, DIAL_BG);
+            _tft.drawString(labels[t / 4], lx, ly);
+        }
+    }
+    _tft.setTextDatum(TL_DATUM);
+}
+
+// Background arc (full sweep, dark) + filled speed arc.
+// Also stores the new needle angle in _gaugeAngle[col].
+void Display::drawGaugeArc(int col, int speed) {
+    int cx = col * COL_W + COL_W / 2;
+    int cy = GAUGE_CY;
+
+    _tft.drawSmoothArc(cx, cy, ARC_R, ARC_IR,
+                        GAUGE_START, GAUGE_START + GAUGE_SWEEP,
+                        COL_GAUGE_BG, DIAL_BG);
+
+    float angle = GAUGE_START + (float)speed / 126.0f * GAUGE_SWEEP;
+    _gaugeAngle[col] = angle;
+
+    if (speed > 0) {
+        _tft.drawSmoothArc(cx, cy, ARC_R, ARC_IR,
+                            GAUGE_START, (uint32_t)angle,
+                            COL_BAR[col & 3], DIAL_BG);
+    }
+}
 
 // Draw (or erase) a single needle at angleDeg using the given colour.
 void Display::drawGaugeNeedle(int col, float angleDeg, uint16_t color) {
-    int cx = col * COL_W + COL_W / 2;
-    int cy = GAUGE_CY;
+    int   cx  = col * COL_W + COL_W / 2;
     float rad = angleDeg * DEG_TO_RAD;
-    int nx = cx + (int)(NEEDLE_R * sinf(rad));
-    int ny = cy - (int)(NEEDLE_R * cosf(rad));
-    _tft.drawWideLine(cx, cy, nx, ny, NEEDLE_W, color, color);
+    int   nx  = cx + (int)(NEEDLE_R * sinf(rad));
+    int   ny  = GAUGE_CY - (int)(NEEDLE_R * cosf(rad));
+    _tft.drawWideLine(cx, GAUGE_CY, nx, ny, NEEDLE_W, color, color);
 }
 
-// Draw the arc, ticks, needle, and hub — assumes area is already clear or
-// caller has erased the old needle first.
-void Display::drawGauge(int col, const LocoState &loco) {
+// Chrome hub cap: bright outer ring, dark core, mid highlight.
+void Display::drawGaugeHub(int col) {
     int cx = col * COL_W + COL_W / 2;
     int cy = GAUGE_CY;
-
-    float needleAngle = GAUGE_START + (float)loco.speed / 126.0f * GAUGE_SWEEP;
-    _gaugeAngle[col] = needleAngle;
-
-    int ir = GAUGE_R - GAUGE_THICK;
-
-    // Background arc (full sweep, dark)
-    _tft.drawSmoothArc(cx, cy, GAUGE_R, ir,
-                        GAUGE_START, GAUGE_START + GAUGE_SWEEP,
-                        COL_GAUGE_BG, COL_BG);
-
-    // Filled arc (speed portion, coloured)
-    if (loco.speed > 0) {
-        _tft.drawSmoothArc(cx, cy, GAUGE_R, ir,
-                            GAUGE_START, (uint32_t)needleAngle,
-                            COL_BAR[col & 3], COL_BG);
-    }
-
-    // Major tick marks at 0 / 25 / 50 / 75 / 100 %
-    for (int t = 0; t <= 4; t++) {
-        float tickRad = (GAUGE_START + t * GAUGE_SWEEP / 4.0f) * DEG_TO_RAD;
-        int x1 = cx + (int)((ir - 2)  * sinf(tickRad));
-        int y1 = cy - (int)((ir - 2)  * cosf(tickRad));
-        int x2 = cx + (int)((ir - 12) * sinf(tickRad));
-        int y2 = cy - (int)((ir - 12) * cosf(tickRad));
-        _tft.drawLine(x1, y1, x2, y2, COL_TEXT);
-    }
-
-    // Needle
-    drawGaugeNeedle(col, needleAngle, COL_TEXT);
-
-    // Hub: filled circle with dark centre for a ring effect
-    _tft.fillCircle(cx, cy, HUB_R,     COL_TEXT);
-    _tft.fillCircle(cx, cy, HUB_R - 3, COL_GAUGE_BG);
+    _tft.fillCircle(cx, cy, HUB_R,     CHR_BRIGHT);
+    _tft.fillCircle(cx, cy, HUB_R - 2, CHR_DARK);
+    _tft.fillCircle(cx, cy, HUB_R - 4, CHR_MED);
 }
 
-// Speed value and direction label in the gap below the gauge centre.
+// Speed number and FWD/REV label drawn below the gauge bezel.
 void Display::drawGaugeTexts(int col, const LocoState &loco) {
     int cx = col * COL_W + COL_W / 2;
 
-    // Speed
     _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
                   SPD_BOX_W, SPD_BOX_H, COL_BG);
     _tft.setFreeFont(&FreeSansBold18pt7b);
@@ -169,7 +228,6 @@ void Display::drawGaugeTexts(int col, const LocoState &loco) {
     snprintf(spd, sizeof(spd), "%d", loco.speed);
     _tft.drawString(spd, cx, GAUGE_SPD_Y);
 
-    // Direction
     _tft.fillRect(cx - DIR_BOX_W / 2, GAUGE_DIR_Y - DIR_BOX_H / 2,
                   DIR_BOX_W, DIR_BOX_H, COL_BG);
     _tft.setFreeFont(&FreeSansBold12pt7b);
@@ -193,12 +251,14 @@ void Display::drawThrottleScreen(const LocoState *locos, int count, bool connect
 }
 
 // ---------------------------------------------------------------------------
-// Single column full redraw — header + gauge + texts
+// Single column full redraw: header + gauge layers + texts
 // ---------------------------------------------------------------------------
 void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected) {
     int x = col * COL_W;
 
-    // Header
+    _tft.fillRect(x, 0, COL_W - 1, H, COL_BG);
+
+    // Header bar
     _tft.fillRect(x, 0, COL_W - 1, HDR_H, COL_HEADER);
     _tft.fillCircle(x + COL_W - 11, HDR_H / 2, 4, connected ? TFT_GREEN : TFT_RED);
     _tft.setFreeFont(&FreeSans9pt7b);
@@ -209,24 +269,34 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     _tft.drawString(addr, x + (COL_W - 1 - 18) / 2, HDR_H / 2);
     _tft.drawFastHLine(x, HDR_H, COL_W - 1, COL_DIVIDER);
 
-    // Clear gauge area and redraw
-    _tft.fillRect(x, HDR_H + 1, COL_W - 1, H - HDR_H - 1, COL_BG);
-    drawGauge(col, loco);
+    // Gauge — draw layers in order
+    drawBezelAndDial(col);
+    drawGaugeArc(col, loco.speed);    // sets _gaugeAngle[col]
+    drawGaugeTicks(col);
+    drawGaugeNeedle(col, _gaugeAngle[col], COL_NEEDLE);
+    drawGaugeHub(col);
     drawGaugeTexts(col, loco);
 }
 
 // ---------------------------------------------------------------------------
-// Speed-only update — flicker-free:
-//   erase old needle → redraw arcs + ticks → draw new needle → update text
+// Speed-only update — flicker-free
+// Erase old needle → redraw arc → redraw ticks → draw new needle → update text
 // ---------------------------------------------------------------------------
 void Display::drawThrottleSpeed(int col, const LocoState &loco) {
-    // 1. Erase old needle (draw in background colour)
-    drawGaugeNeedle(col, _gaugeAngle[col], COL_BG);
+    // 1. Erase old needle by drawing over it in dial colour
+    drawGaugeNeedle(col, _gaugeAngle[col], DIAL_BG);
 
-    // 2. Redraw arcs, ticks, new needle, hub
-    drawGauge(col, loco);
+    // 2. Redraw arcs (updates _gaugeAngle[col] to new angle)
+    drawGaugeArc(col, loco.speed);
 
-    // 3. Speed text only (direction unchanged)
+    // 3. Redraw ticks (arc can overwrite tick pixels at arc boundaries)
+    drawGaugeTicks(col);
+
+    // 4. New needle + hub
+    drawGaugeNeedle(col, _gaugeAngle[col], COL_NEEDLE);
+    drawGaugeHub(col);
+
+    // 5. Speed number only (direction unchanged, skip direction box)
     int cx = col * COL_W + COL_W / 2;
     _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
                   SPD_BOX_W, SPD_BOX_H, COL_BG);
@@ -259,9 +329,9 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
     int visible = min(ROSTER_VISIBLE_ROWS, count - scrollOffset);
 
     for (int i = 0; i < visible; i++) {
-        int idx        = scrollOffset + i;
-        bool hilight   = (entries[idx].address == DEFAULT_LOCO_ADDRESS);
-        uint16_t rowBg = hilight ? COL_SELECTED : COL_BG;
+        int      idx   = scrollOffset + i;
+        bool     hi    = (entries[idx].address == DEFAULT_LOCO_ADDRESS);
+        uint16_t rowBg = hi ? COL_SELECTED : COL_BG;
 
         _tft.fillRect(0, y, W, ROSTER_ROW_H - 2, rowBg);
 
@@ -290,8 +360,6 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
     }
 }
 
-// ---------------------------------------------------------------------------
-// Roster helpers
 // ---------------------------------------------------------------------------
 void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
     _tft.fillRect(0, 0, W, ROSTER_HDR_H, bg);

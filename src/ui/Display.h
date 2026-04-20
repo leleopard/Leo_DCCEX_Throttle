@@ -19,7 +19,7 @@ public:
 
     void drawThrottleScreen(const LocoState *locos, int count, bool connected);
     void drawThrottleColumn(int col, const LocoState &loco, bool connected);
-    void drawThrottleSpeed(int col, const LocoState &loco);   // gauge + speed only, flicker-free
+    void drawThrottleSpeed(int col, const LocoState &loco);   // flicker-free speed update
     void drawRosterScreen(const RosterEntry *entries, int count, int scrollOffset);
 
 #if DISPLAY_480
@@ -30,11 +30,16 @@ public:
 
 private:
     TFT_eSPI _tft;
-    float    _gaugeAngle[NUM_THROTTLES];   // current needle angle per slot (degrees)
+    float    _gaugeAngle[NUM_THROTTLES];  // current needle angle per slot (degrees)
 
     void drawHeader(const char *title, uint16_t bg, uint16_t fg);
     void drawStatusBar(bool connected);
-    void drawGauge(int col, const LocoState &loco);          // full gauge area redraw
-    void drawGaugeNeedle(int col, float angleDeg, uint16_t color); // single needle draw
-    void drawGaugeTexts(int col, const LocoState &loco);     // speed + direction text
+
+    // Gauge layers — called in sequence to build the speedometer face
+    void drawBezelAndDial(int col);                              // chrome bezel + dark dial face
+    void drawGaugeTicks(int col);                                // tick marks + speed labels
+    void drawGaugeArc(int col, int speed);                       // arc rings (background + filled)
+    void drawGaugeNeedle(int col, float angleDeg, uint16_t color); // single needle draw/erase
+    void drawGaugeHub(int col);                                  // centre hub cap
+    void drawGaugeTexts(int col, const LocoState &loco);        // speed value + FWD/REV label
 };
