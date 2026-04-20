@@ -22,7 +22,7 @@ static constexpr uint16_t COL_SELECTED = 0x1E3F;
 static constexpr uint16_t COL_NEEDLE   = TFT_RED;
 static constexpr uint16_t DIAL_BG      = 0x1082;   // charcoal dial face
 
-// Chrome bezel layers: dark shadow → bright highlight → mid → bright → dark
+// Chrome bezel layers
 static constexpr uint16_t CHR_DARK   = 0x2104;
 static constexpr uint16_t CHR_MED    = 0x738E;
 static constexpr uint16_t CHR_BRIGHT = 0xEF7D;
@@ -47,21 +47,27 @@ static constexpr int HDR_H = Display::HDR_H;
 
 // ---------------------------------------------------------------------------
 // Gauge layout
-// Angles: TFT_eSPI convention 0=12 o'clock, CW.
-// Arc sweeps from 8 o'clock (220°) to 4 o'clock (220+280=500° ≡ 140°).
+// Needle angles use 0° = 12 o'clock, clockwise (standard trig convention for TFT).
+// TFT_eSPI drawSmoothArc uses 0° = 6 o'clock, clockwise.
+// Conversion: tftArc = (needleAngle + 180) % 360
 // ---------------------------------------------------------------------------
-static constexpr int GAUGE_START = 220;
+static constexpr int GAUGE_START = 220;   // needle convention
 static constexpr int GAUGE_SWEEP = 280;
 
-#if DISPLAY_480
-static constexpr int GAUGE_R     = 100;  // outer bezel radius
-static constexpr int BEZEL_W     = 8;    // chrome ring width
-static constexpr int GAUGE_THICK = 20;   // arc ring thickness
-static constexpr int GAUGE_CY    = 145;  // gauge centre y
+// Pre-converted arc start/end for drawSmoothArc
+static constexpr uint32_t TFT_ARC_START = (GAUGE_START + 180) % 360;              // 40
+static constexpr uint32_t TFT_ARC_END   = (GAUGE_START + GAUGE_SWEEP + 180) % 360; // 320
 
-// ARC_R = GAUGE_R - BEZEL_W (arc drawn inside bezel)
+#if DISPLAY_480
+static constexpr int GAUGE_R     = 100;
+static constexpr int BEZEL_W     = 8;
+static constexpr int GAUGE_THICK = 20;
+static constexpr int GAUGE_CY    = 145;
+
 static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 92
 static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 72
+
+static constexpr int SPRITE_R    = ARC_R + 1;               // 93 — sprite half-size
 
 static constexpr int NEEDLE_R    = 78;
 static constexpr int NEEDLE_W    = 4;
@@ -90,6 +96,8 @@ static constexpr int GAUGE_CY    = 100;
 
 static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 62
 static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 48
+
+static constexpr int SPRITE_R    = ARC_R + 1;               // 63
 
 static constexpr int NEEDLE_R    = 52;
 static constexpr int NEEDLE_W    = 3;
@@ -122,19 +130,17 @@ void Display::begin() {
     _tft.setRotation(1);
     _tft.pushImage(0, 0, SCREEN_W, SCREEN_H, splash_pixels);
 
-    for (int i = 0; i < NUM_THROTTLES; i++)
-        _gaugeAngle[i] = GAUGE_START;
+    // Allocate gauge face sprite once — reused for every column update
+    _face.createSprite(2 * SPRITE_R, 2 * SPRITE_R);
 
     delay(2000);
 }
 
 // ---------------------------------------------------------------------------
-// Gauge layer helpers
+// Gauge helpers
 // ---------------------------------------------------------------------------
 
-// Chrome bezel (concentric rings dark→bright→mid→bright→dark) + charcoal dial face.
-// Pattern: outermost 1px dark, 1px bright, (BEZEL_W-4) px mid, 1px bright, 1px dark,
-// then dial face fills the remainder.  Works for any BEZEL_W >= 4.
+// Chrome bezel (static, drawn once per full column redraw; not part of sprite).
 void Display::drawBezelAndDial(int col) {
     int cx = col * COL_W + COL_W / 2;
     int cy = GAUGE_CY;
@@ -146,76 +152,75 @@ void Display::drawBezelAndDial(int col) {
     _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W,     DIAL_BG);
 }
 
-// 21 tick positions over 280° (14° per step).
-// Major ticks every 4 steps (positions 0,4,8,12,16,20 = labels 0,25,50,76,101,126).
-void Display::drawGaugeTicks(int col) {
-    int cx = col * COL_W + COL_W / 2;
-    int cy = GAUGE_CY;
-
+// Render arc ring, tick marks, needle and hub into _face sprite.
+// The sprite uses TFT_TRANSPARENT for corner pixels outside the gauge circle,
+// so pushFaceSprite skips those and the chrome bezel behind them is preserved.
+//
+// Arc angle fix: TFT_eSPI drawSmoothArc counts from 6 o'clock CW (0° = bottom).
+// Our needle angles count from 12 o'clock CW.  Conversion: tft = (needle+180)%360.
+void Display::renderFaceToSprite(int col, int speed) {
     static const char *labels[] = { "0", "25", "50", "76", "101", "126" };
+    const int scx = SPRITE_R;
+    const int scy = SPRITE_R;
 
+    // Transparent background for corners; dial face fills the circular area
+    _face.fillSprite(TFT_TRANSPARENT);
+    _face.fillCircle(scx, scy, ARC_R + 1, DIAL_BG);
+
+    // Arc ring — background (full sweep)
+    _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
+                        TFT_ARC_START, TFT_ARC_END, COL_GAUGE_BG, DIAL_BG);
+
+    // Arc ring — speed fill (partial sweep, corrected angles)
+    float needleAngle = GAUGE_START + (float)speed / 126.0f * GAUGE_SWEEP;
+    if (speed > 0) {
+        uint32_t tftAngle = ((uint32_t)needleAngle + 180) % 360;
+        _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
+                            TFT_ARC_START, tftAngle, COL_BAR[col & 3], DIAL_BG);
+    }
+
+    // Tick marks and speed labels (use needle-convention angles for x/y maths)
     for (int t = 0; t <= 20; t++) {
-        float angle = (GAUGE_START + t * GAUGE_SWEEP / 20.0f) * DEG_TO_RAD;
-        float sinA  = sinf(angle);
-        float cosA  = cosf(angle);
+        float a    = (GAUGE_START + t * GAUGE_SWEEP / 20.0f) * DEG_TO_RAD;
+        float sinA = sinf(a), cosA = cosf(a);
         bool  major = (t % 4 == 0);
         int   r2    = major ? TICK_MAJ_IN : TICK_MIN_IN;
 
-        _tft.drawLine(cx + (int)(TICK_OUTER * sinA), cy - (int)(TICK_OUTER * cosA),
-                      cx + (int)(r2          * sinA), cy - (int)(r2          * cosA),
-                      COL_TEXT);
+        _face.drawLine(scx + (int)(TICK_OUTER * sinA), scy - (int)(TICK_OUTER * cosA),
+                       scx + (int)(r2          * sinA), scy - (int)(r2          * cosA),
+                       COL_TEXT);
 
         if (major) {
-            int lx = cx + (int)(LABEL_R * sinA);
-            int ly = cy - (int)(LABEL_R * cosA);
-            _tft.setTextFont(1);
-            _tft.setTextDatum(MC_DATUM);
-            _tft.setTextColor(COL_TEXT, DIAL_BG);
-            _tft.drawString(labels[t / 4], lx, ly);
+            _face.setTextFont(1);
+            _face.setTextDatum(MC_DATUM);
+            _face.setTextColor(COL_TEXT, DIAL_BG);
+            _face.drawString(labels[t / 4],
+                             scx + (int)(LABEL_R * sinA),
+                             scy - (int)(LABEL_R * cosA));
         }
     }
-    _tft.setTextDatum(TL_DATUM);
+    _face.setTextDatum(TL_DATUM);
+
+    // Needle (needle-convention angle → correct screen direction)
+    float rad = needleAngle * DEG_TO_RAD;
+    int   nx  = scx + (int)(NEEDLE_R * sinf(rad));
+    int   ny  = scy - (int)(NEEDLE_R * cosf(rad));
+    _face.drawWideLine(scx, scy, nx, ny, NEEDLE_W, COL_NEEDLE, COL_NEEDLE);
+
+    // Chrome hub cap
+    _face.fillCircle(scx, scy, HUB_R,     CHR_BRIGHT);
+    _face.fillCircle(scx, scy, HUB_R - 2, CHR_DARK);
+    _face.fillCircle(scx, scy, HUB_R - 4, CHR_MED);
 }
 
-// Background arc (full sweep, dark) + filled speed arc.
-// Also stores the new needle angle in _gaugeAngle[col].
-void Display::drawGaugeArc(int col, int speed) {
+// Push sprite to screen, skipping transparent corner pixels so the chrome
+// bezel drawn by drawBezelAndDial underneath is preserved.
+void Display::pushFaceSprite(int col) {
     int cx = col * COL_W + COL_W / 2;
-    int cy = GAUGE_CY;
-
-    _tft.drawSmoothArc(cx, cy, ARC_R, ARC_IR,
-                        GAUGE_START, GAUGE_START + GAUGE_SWEEP,
-                        COL_GAUGE_BG, DIAL_BG);
-
-    float angle = GAUGE_START + (float)speed / 126.0f * GAUGE_SWEEP;
-    _gaugeAngle[col] = angle;
-
-    if (speed > 0) {
-        _tft.drawSmoothArc(cx, cy, ARC_R, ARC_IR,
-                            GAUGE_START, (uint32_t)angle,
-                            COL_BAR[col & 3], DIAL_BG);
-    }
+    _face.pushSprite(cx - SPRITE_R, GAUGE_CY - SPRITE_R, TFT_TRANSPARENT);
 }
 
-// Draw (or erase) a single needle at angleDeg using the given colour.
-void Display::drawGaugeNeedle(int col, float angleDeg, uint16_t color) {
-    int   cx  = col * COL_W + COL_W / 2;
-    float rad = angleDeg * DEG_TO_RAD;
-    int   nx  = cx + (int)(NEEDLE_R * sinf(rad));
-    int   ny  = GAUGE_CY - (int)(NEEDLE_R * cosf(rad));
-    _tft.drawWideLine(cx, GAUGE_CY, nx, ny, NEEDLE_W, color, color);
-}
-
-// Chrome hub cap: bright outer ring, dark core, mid highlight.
-void Display::drawGaugeHub(int col) {
-    int cx = col * COL_W + COL_W / 2;
-    int cy = GAUGE_CY;
-    _tft.fillCircle(cx, cy, HUB_R,     CHR_BRIGHT);
-    _tft.fillCircle(cx, cy, HUB_R - 2, CHR_DARK);
-    _tft.fillCircle(cx, cy, HUB_R - 4, CHR_MED);
-}
-
-// Speed number and FWD/REV label drawn below the gauge bezel.
+// Speed number and FWD/REV label drawn to screen below the gauge.
 void Display::drawGaugeTexts(int col, const LocoState &loco) {
     int cx = col * COL_W + COL_W / 2;
 
@@ -251,7 +256,7 @@ void Display::drawThrottleScreen(const LocoState *locos, int count, bool connect
 }
 
 // ---------------------------------------------------------------------------
-// Single column full redraw: header + gauge layers + texts
+// Single column full redraw: header + static bezel + gauge face + texts
 // ---------------------------------------------------------------------------
 void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected) {
     int x = col * COL_W;
@@ -269,34 +274,22 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     _tft.drawString(addr, x + (COL_W - 1 - 18) / 2, HDR_H / 2);
     _tft.drawFastHLine(x, HDR_H, COL_W - 1, COL_DIVIDER);
 
-    // Gauge — draw layers in order
+    // Gauge: static bezel drawn to screen, dynamic face rendered as sprite
     drawBezelAndDial(col);
-    drawGaugeArc(col, loco.speed);    // sets _gaugeAngle[col]
-    drawGaugeTicks(col);
-    drawGaugeNeedle(col, _gaugeAngle[col], COL_NEEDLE);
-    drawGaugeHub(col);
+    renderFaceToSprite(col, loco.speed);
+    pushFaceSprite(col);
     drawGaugeTexts(col, loco);
 }
 
 // ---------------------------------------------------------------------------
-// Speed-only update — flicker-free
-// Erase old needle → redraw arc → redraw ticks → draw new needle → update text
+// Speed-only update — render full gauge face into sprite and push atomically.
+// The sprite replaces the dial area in one SPI burst; no partial state visible.
 // ---------------------------------------------------------------------------
 void Display::drawThrottleSpeed(int col, const LocoState &loco) {
-    // 1. Erase old needle by drawing over it in dial colour
-    drawGaugeNeedle(col, _gaugeAngle[col], DIAL_BG);
+    renderFaceToSprite(col, loco.speed);
+    pushFaceSprite(col);
 
-    // 2. Redraw arcs (updates _gaugeAngle[col] to new angle)
-    drawGaugeArc(col, loco.speed);
-
-    // 3. Redraw ticks (arc can overwrite tick pixels at arc boundaries)
-    drawGaugeTicks(col);
-
-    // 4. New needle + hub
-    drawGaugeNeedle(col, _gaugeAngle[col], COL_NEEDLE);
-    drawGaugeHub(col);
-
-    // 5. Speed number only (direction unchanged, skip direction box)
+    // Update speed number only (direction text unchanged)
     int cx = col * COL_W + COL_W / 2;
     _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
                   SPD_BOX_W, SPD_BOX_H, COL_BG);
