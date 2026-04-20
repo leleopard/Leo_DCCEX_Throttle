@@ -20,8 +20,8 @@
 // Rotary encoders  [CLK, DT, SW]
 // Note: CLK/DT can be input-only pins (34/35); SW needs pull-up support.
 // ---------------------------------------------------------------------------
-#define ENC1_CLK  34
-#define ENC1_DT   35
+#define ENC1_CLK  33
+#define ENC1_DT   14
 #define ENC1_SW   32
 
 #define ENC2_CLK  25
