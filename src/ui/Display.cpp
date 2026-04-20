@@ -20,7 +20,7 @@ static constexpr uint16_t COL_GAUGE_BG = 0x2104;
 static constexpr uint16_t COL_DIVIDER  = 0x4208;
 static constexpr uint16_t COL_SELECTED = 0x1E3F;
 static constexpr uint16_t COL_NEEDLE   = TFT_RED;
-static constexpr uint16_t DIAL_BG      = 0x1082;   // charcoal dial face
+static constexpr uint16_t DIAL_BG      = TFT_WHITE;  // white dial face
 
 // Chrome bezel layers
 static constexpr uint16_t CHR_DARK   = 0x2104;
@@ -188,17 +188,18 @@ void Display::renderFaceToSprite(int col, int speed) {
 
         _face.drawLine(scx + (int)(TICK_OUTER * sinA), scy - (int)(TICK_OUTER * cosA),
                        scx + (int)(r2          * sinA), scy - (int)(r2          * cosA),
-                       COL_TEXT);
+                       TFT_BLACK);
 
         if (major) {
-            _face.setTextFont(1);
+            _face.setFreeFont(&FreeSans9pt7b);
             _face.setTextDatum(MC_DATUM);
-            _face.setTextColor(COL_TEXT, DIAL_BG);
+            _face.setTextColor(TFT_BLACK, DIAL_BG);
             _face.drawString(labels[t / 4],
                              scx + (int)(LABEL_R * sinA),
                              scy - (int)(LABEL_R * cosA));
         }
     }
+    _face.setTextFont(1);
     _face.setTextDatum(TL_DATUM);
 
     // Needle (needle-convention angle → correct screen direction)
