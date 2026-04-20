@@ -142,11 +142,17 @@ static void uiTask(void *param) {
 
         // --- Encoder input (throttle screen only) ---
         if (activeScreen == Screen::THROTTLE) {
+            static uint32_t lastEncMs[NUM_THROTTLES] = {};
             for (int i = 0; i < NUM_THROTTLES; i++) {
                 int delta = encoders.getDelta(i);
                 if (delta != 0) {
-                    noteActivity();   // wake if sleeping, then apply change
-                    int newSpeed = constrain(locoState[i].speed + delta * SPEED_STEP, 0, 126);
+                    uint32_t now = millis();
+                    uint32_t elapsed = now - lastEncMs[i];
+                    lastEncMs[i] = now;
+                    int accel = (elapsed < 50) ? 8 : (elapsed < 100) ? 4 : (elapsed < 200) ? 2 : 1;
+
+                    noteActivity();
+                    int newSpeed = constrain(locoState[i].speed + delta * accel, 0, 126);
                     if (newSpeed != locoState[i].speed) {
                         locoState[i].speed = newSpeed;
                         display.drawThrottleSpeed(i, locoState[i]);
@@ -158,7 +164,8 @@ static void uiTask(void *param) {
                     noteActivity();
                     locoState[i].forward = !locoState[i].forward;
                     locoState[i].speed   = 0;
-                    display.drawThrottleColumn(i, locoState[i], connected);
+                    display.drawThrottleSpeed(i, locoState[i]);
+                    display.drawGaugeTexts(i, locoState[i]);
                     UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
                     xQueueSend(cmdQueue, &cmd, 0);
                 }

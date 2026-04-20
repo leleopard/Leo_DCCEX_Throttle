@@ -20,6 +20,7 @@ public:
     void drawThrottleScreen(const LocoState *locos, int count, bool connected);
     void drawThrottleColumn(int col, const LocoState &loco, bool connected);
     void drawThrottleSpeed(int col, const LocoState &loco);
+    void drawGaugeTexts(int col, const LocoState &loco);
     void drawRosterScreen(const RosterEntry *entries, int count, int scrollOffset);
 
 #if DISPLAY_480
@@ -35,7 +36,6 @@ private:
     void drawHeader(const char *title, uint16_t bg, uint16_t fg);
     void drawStatusBar(bool connected);
     void drawBezelAndDial(int col);
-    void renderFaceToSprite(int col, int speed);   // render gauge face into _face sprite
-    void pushFaceSprite(int col);                  // push _face to correct screen position
-    void drawGaugeTexts(int col, const LocoState &loco);
+    void renderFaceToSprite(int col, int speed);
+    void pushFaceSprite(int col);
 };
