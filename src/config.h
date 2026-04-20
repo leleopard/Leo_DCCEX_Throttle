@@ -96,7 +96,7 @@
 // ---------------------------------------------------------------------------
 // Test harness — set to 1 to simulate loco speeds instead of real DCC
 // ---------------------------------------------------------------------------
-#define ENABLE_TEST_HARNESS  0
+#define ENABLE_TEST_HARNESS  1
 #define TEST_SPEED_STEP_MS  40   // ms between each speed increment per loco
 
 // Queue depths
