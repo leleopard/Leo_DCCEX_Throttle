@@ -204,7 +204,7 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
     _face.setFreeFont(&FreeSans9pt7b);
 #endif
     _face.setTextColor(TFT_WHITE);
-    _face.drawString(spd, scx, scy + SPD_INNER_Y);
+    _face.drawString(spd, scx, scy + SPD_INNER_Y - 4);
     _face.setTextFont(1);
     _face.setTextDatum(TL_DATUM);
 
