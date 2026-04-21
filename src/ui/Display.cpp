@@ -203,7 +203,7 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
 #else
     _face.setFreeFont(&FreeSans9pt7b);
 #endif
-    _face.setTextColor(TFT_WHITE, TFT_BLACK);
+    _face.setTextColor(TFT_WHITE);
     _face.drawString(spd, scx, scy + SPD_INNER_Y);
     _face.setTextFont(1);
     _face.setTextDatum(TL_DATUM);
