@@ -51,8 +51,8 @@ static constexpr int HDR_H = Display::HDR_H;
 // TFT_eSPI drawSmoothArc uses 0° = 6 o'clock, clockwise.
 // Conversion: tftArc = (needleAngle + 180) % 360
 // ---------------------------------------------------------------------------
-static constexpr int GAUGE_START = 220;   // needle convention
-static constexpr int GAUGE_SWEEP = 280;
+static constexpr int GAUGE_START = 205;   // needle convention
+static constexpr int GAUGE_SWEEP = 310;
 
 // Pre-converted arc start/end for drawSmoothArc
 static constexpr uint32_t TFT_ARC_START = (GAUGE_START + 180) % 360;              // 40
@@ -76,12 +76,9 @@ static constexpr int HUB_R       = 10;
 static constexpr int TICK_OUTER  = ARC_IR - 1;              // 71
 static constexpr int TICK_MAJ_IN = ARC_IR - 17;             // 55
 static constexpr int TICK_MIN_IN = ARC_IR - 9;              // 63
-static constexpr int LABEL_R     = ARC_IR - 27;             // 45
+static constexpr int SPD_INNER_Y = 55;                      // speed text offset below sprite centre
 
-static constexpr int GAUGE_SPD_Y = 262;
-static constexpr int GAUGE_DIR_Y = 290;
-static constexpr int SPD_BOX_W   = 100;
-static constexpr int SPD_BOX_H   = 38;
+static constexpr int GAUGE_DIR_Y = 270;
 static constexpr int DIR_BOX_W   = 80;
 static constexpr int DIR_BOX_H   = 30;
 
@@ -106,12 +103,9 @@ static constexpr int HUB_R       = 7;
 static constexpr int TICK_OUTER  = ARC_IR - 1;              // 47
 static constexpr int TICK_MAJ_IN = ARC_IR - 12;             // 36
 static constexpr int TICK_MIN_IN = ARC_IR - 6;              // 42
-static constexpr int LABEL_R     = ARC_IR - 20;             // 28
+static constexpr int SPD_INNER_Y = 37;                      // speed text offset below sprite centre
 
-static constexpr int GAUGE_SPD_Y = 185;
-static constexpr int GAUGE_DIR_Y = 210;
-static constexpr int SPD_BOX_W   = 80;
-static constexpr int SPD_BOX_H   = 30;
+static constexpr int GAUGE_DIR_Y = 195;
 static constexpr int DIR_BOX_W   = 64;
 static constexpr int DIR_BOX_H   = 24;
 
@@ -162,7 +156,6 @@ void Display::drawBezelAndDial(int col) {
 // Arc angle fix: TFT_eSPI drawSmoothArc counts from 6 o'clock CW (0° = bottom).
 // Our needle angles count from 12 o'clock CW.  Conversion: tft = (needle+180)%360.
 void Display::renderFaceToSprite(int col, int speed) {
-    static const char *labels[] = { "0", "25", "50", "76", "101", "126" };
     const int scx = SPRITE_R;
     const int scy = SPRITE_R;
 
@@ -182,7 +175,7 @@ void Display::renderFaceToSprite(int col, int speed) {
                             TFT_ARC_START, tftAngle, COL_BAR[col & 3], DIAL_BG);
     }
 
-    // Tick marks and speed labels (use needle-convention angles for x/y maths)
+    // Tick marks only — no speed labels (speed shown as number inside gauge)
     for (int t = 0; t <= 20; t++) {
         float a    = (GAUGE_START + t * GAUGE_SWEEP / 20.0f) * DEG_TO_RAD;
         float sinA = sinf(a), cosA = cosf(a);
@@ -192,16 +185,19 @@ void Display::renderFaceToSprite(int col, int speed) {
         _face.drawLine(scx + (int)(TICK_OUTER * sinA), scy - (int)(TICK_OUTER * cosA),
                        scx + (int)(r2          * sinA), scy - (int)(r2          * cosA),
                        TFT_BLACK);
-
-        if (major) {
-            _face.setFreeFont(&FreeSans9pt7b);
-            _face.setTextDatum(MC_DATUM);
-            _face.setTextColor(TFT_BLACK, DIAL_BG);
-            _face.drawString(labels[t / 4],
-                             scx + (int)(LABEL_R * sinA),
-                             scy - (int)(LABEL_R * cosA));
-        }
     }
+
+    // Speed number in the bottom gap of the gauge
+    char spd[4];
+    snprintf(spd, sizeof(spd), "%d", speed);
+#if DISPLAY_480
+    _face.setFreeFont(&FreeSansBold18pt7b);
+#else
+    _face.setFreeFont(&FreeSans9pt7b);
+#endif
+    _face.setTextDatum(MC_DATUM);
+    _face.setTextColor(TFT_BLACK, DIAL_BG);
+    _face.drawString(spd, scx, scy + SPD_INNER_Y);
     _face.setTextFont(1);
     _face.setTextDatum(TL_DATUM);
 
@@ -224,18 +220,9 @@ void Display::pushFaceSprite(int col) {
     _face.pushSprite(cx - SPRITE_R, GAUGE_CY - SPRITE_R, TFT_TRANSPARENT);
 }
 
-// Speed number and FWD/REV label drawn to screen below the gauge.
+// FWD/REV label drawn below the gauge (speed is now inside the sprite).
 void Display::drawGaugeTexts(int col, const LocoState &loco) {
     int cx = col * COL_W + COL_W / 2;
-
-    _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
-                  SPD_BOX_W, SPD_BOX_H, COL_BG);
-    _tft.setFreeFont(&FreeSansBold18pt7b);
-    _tft.setTextColor(COL_TEXT);
-    _tft.setTextDatum(MC_DATUM);
-    char spd[4];
-    snprintf(spd, sizeof(spd), "%d", loco.speed);
-    _tft.drawString(spd, cx, GAUGE_SPD_Y);
 
     _tft.fillRect(cx - DIR_BOX_W / 2, GAUGE_DIR_Y - DIR_BOX_H / 2,
                   DIR_BOX_W, DIR_BOX_H, COL_BG);
@@ -292,19 +279,6 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
 void Display::drawThrottleSpeed(int col, const LocoState &loco) {
     renderFaceToSprite(col, loco.speed);
     pushFaceSprite(col);
-
-    // Update speed number only (direction text unchanged)
-    int cx = col * COL_W + COL_W / 2;
-    _tft.fillRect(cx - SPD_BOX_W / 2, GAUGE_SPD_Y - SPD_BOX_H / 2,
-                  SPD_BOX_W, SPD_BOX_H, COL_BG);
-    _tft.setFreeFont(&FreeSansBold18pt7b);
-    _tft.setTextColor(COL_TEXT);
-    _tft.setTextDatum(MC_DATUM);
-    char spd[4];
-    snprintf(spd, sizeof(spd), "%d", loco.speed);
-    _tft.drawString(spd, cx, GAUGE_SPD_Y);
-    _tft.setTextFont(1);
-    _tft.setTextDatum(TL_DATUM);
 }
 
 // ---------------------------------------------------------------------------
