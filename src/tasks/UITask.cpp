@@ -166,7 +166,6 @@ static void uiTask(void *param) {
                     locoState[i].forward = !locoState[i].forward;
                     locoState[i].speed   = 0;
                     display.drawThrottleSpeed(i, locoState[i]);
-                    display.drawGaugeTexts(i, locoState[i]);
                     UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
                     xQueueSend(cmdQueue, &cmd, 0);
                 }
