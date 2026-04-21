@@ -77,9 +77,9 @@ static constexpr int TICK_OUTER  = ARC_IR - 1;              // 71
 static constexpr int TICK_MAJ_IN = ARC_IR - 17;             // 55
 static constexpr int TICK_MIN_IN = ARC_IR - 9;              // 63
 static constexpr int DIR_INNER_Y = 30;   // FWD/REV offset below sprite centre
-static constexpr int SPD_INNER_Y = 60;   // speed number offset below sprite centre
-static constexpr int SPD_BOX_W   = 56;
-static constexpr int SPD_BOX_H   = 28;
+static constexpr int SPD_INNER_Y = 65;   // speed number offset below sprite centre
+static constexpr int SPD_BOX_W   = 72;
+static constexpr int SPD_BOX_H   = 36;
 
 static constexpr int ROSTER_HDR_H = 48;
 static constexpr int ROSTER_ROW_H = 36;
@@ -103,9 +103,9 @@ static constexpr int TICK_OUTER  = ARC_IR - 1;              // 47
 static constexpr int TICK_MAJ_IN = ARC_IR - 12;             // 36
 static constexpr int TICK_MIN_IN = ARC_IR - 6;              // 42
 static constexpr int DIR_INNER_Y = 20;
-static constexpr int SPD_INNER_Y = 38;
-static constexpr int SPD_BOX_W   = 40;
-static constexpr int SPD_BOX_H   = 20;
+static constexpr int SPD_INNER_Y = 42;
+static constexpr int SPD_BOX_W   = 50;
+static constexpr int SPD_BOX_H   = 24;
 
 static constexpr int ROSTER_HDR_H = 36;
 static constexpr int ROSTER_ROW_H = 32;
@@ -188,7 +188,7 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
 
     // FWD/REV label above speed box
     _face.setTextDatum(MC_DATUM);
-    _face.setFreeFont(&FreeSans9pt7b);
+    _face.setFreeFont(&FreeSansBold9pt7b);
     _face.setTextColor(loco.forward ? COL_FWD : COL_REV, DIAL_BG);
     _face.drawString(loco.forward ? "FWD" : "REV", scx, scy + DIR_INNER_Y);
 
