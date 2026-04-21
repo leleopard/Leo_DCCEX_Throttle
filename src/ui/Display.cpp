@@ -76,8 +76,10 @@ static constexpr int HUB_R       = 10;
 static constexpr int TICK_OUTER  = ARC_IR - 1;              // 71
 static constexpr int TICK_MAJ_IN = ARC_IR - 17;             // 55
 static constexpr int TICK_MIN_IN = ARC_IR - 9;              // 63
-static constexpr int DIR_INNER_Y = 42;   // FWD/REV offset below sprite centre
-static constexpr int SPD_INNER_Y = 62;   // speed number offset below sprite centre
+static constexpr int DIR_INNER_Y = 30;   // FWD/REV offset below sprite centre
+static constexpr int SPD_INNER_Y = 60;   // speed number offset below sprite centre
+static constexpr int SPD_BOX_W   = 56;
+static constexpr int SPD_BOX_H   = 28;
 
 static constexpr int ROSTER_HDR_H = 48;
 static constexpr int ROSTER_ROW_H = 36;
@@ -100,8 +102,10 @@ static constexpr int HUB_R       = 7;
 static constexpr int TICK_OUTER  = ARC_IR - 1;              // 47
 static constexpr int TICK_MAJ_IN = ARC_IR - 12;             // 36
 static constexpr int TICK_MIN_IN = ARC_IR - 6;              // 42
-static constexpr int DIR_INNER_Y = 28;
-static constexpr int SPD_INNER_Y = 42;
+static constexpr int DIR_INNER_Y = 20;
+static constexpr int SPD_INNER_Y = 38;
+static constexpr int SPD_BOX_W   = 40;
+static constexpr int SPD_BOX_H   = 20;
 
 static constexpr int ROSTER_HDR_H = 36;
 static constexpr int ROSTER_ROW_H = 32;
@@ -182,19 +186,24 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
                        TFT_BLACK);
     }
 
-    // FWD/REV and speed number stacked in the bottom gap of the gauge
+    // FWD/REV label above speed box
     _face.setTextDatum(MC_DATUM);
     _face.setFreeFont(&FreeSans9pt7b);
     _face.setTextColor(loco.forward ? COL_FWD : COL_REV, DIAL_BG);
     _face.drawString(loco.forward ? "FWD" : "REV", scx, scy + DIR_INNER_Y);
+
+    // Speed box: fixed black background, white text, 0-100 scale
+    int displaySpeed = (speed * 100 + 63) / 126;
+    char spd[4];
+    snprintf(spd, sizeof(spd), "%d", displaySpeed);
+    _face.fillRoundRect(scx - SPD_BOX_W / 2, scy + SPD_INNER_Y - SPD_BOX_H / 2,
+                        SPD_BOX_W, SPD_BOX_H, 4, TFT_BLACK);
 #if DISPLAY_480
     _face.setFreeFont(&FreeSansBold18pt7b);
 #else
     _face.setFreeFont(&FreeSans9pt7b);
 #endif
-    char spd[4];
-    snprintf(spd, sizeof(spd), "%d", speed);
-    _face.setTextColor(TFT_BLACK, DIAL_BG);
+    _face.setTextColor(TFT_WHITE, TFT_BLACK);
     _face.drawString(spd, scx, scy + SPD_INNER_Y);
     _face.setTextFont(1);
     _face.setTextDatum(TL_DATUM);
