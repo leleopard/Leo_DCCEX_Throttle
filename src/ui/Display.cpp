@@ -394,7 +394,10 @@ void Display::sleep() {
 
 void Display::wake() {
     _tft.writecommand(0x11);   // SLPOUT
-    delay(120);
+    delay(120);                // display IC mandatory settle time; backlight stays off
+}
+
+void Display::fadeInBacklight() {
 #if TFT_BL_PIN >= 0
     for (int v = 0; v <= 255; v += 5) { ledcWrite(BL_LEDC_CH, v); delay(6); }
     ledcWrite(BL_LEDC_CH, 255);

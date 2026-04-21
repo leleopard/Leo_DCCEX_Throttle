@@ -16,6 +16,7 @@ public:
     void begin();
     void sleep();
     void wake();
+    void fadeInBacklight();
 
     void drawThrottleScreen(const LocoState *locos, int count, bool connected);
     void drawThrottleColumn(int col, const LocoState &loco, bool connected);

@@ -88,8 +88,9 @@ static void uiTask(void *param) {
         lastActivityMs = millis();
         if (displaySleeping) {
             displaySleeping = false;
-            display.wake();
-            redrawActive();
+            display.wake();       // SLPOUT + settle; backlight still off
+            redrawActive();       // full redraw while backlight is off
+            display.fadeInBacklight();
             return true;
         }
         return false;
