@@ -121,10 +121,13 @@ static constexpr int STATUS_H     = 24;
 #endif
 
 // ---------------------------------------------------------------------------
+static constexpr int BL_LEDC_CH = 0;   // LEDC channel for backlight PWM
+
 void Display::begin() {
 #if TFT_BL_PIN >= 0
-    pinMode(TFT_BL_PIN, OUTPUT);
-    digitalWrite(TFT_BL_PIN, HIGH);
+    ledcSetup(BL_LEDC_CH, 5000, 8);    // 5 kHz, 8-bit resolution
+    ledcAttachPin(TFT_BL_PIN, BL_LEDC_CH);
+    ledcWrite(BL_LEDC_CH, 255);
 #endif
     _tft.init();
     _tft.setRotation(1);
@@ -383,7 +386,8 @@ void Display::drawStatusBar(bool connected) {
 // ---------------------------------------------------------------------------
 void Display::sleep() {
 #if TFT_BL_PIN >= 0
-    digitalWrite(TFT_BL_PIN, LOW);
+    for (int v = 255; v >= 0; v -= 5) { ledcWrite(BL_LEDC_CH, v); delay(12); }
+    ledcWrite(BL_LEDC_CH, 0);
 #endif
     _tft.writecommand(0x10);   // SLPIN
 }
@@ -392,7 +396,8 @@ void Display::wake() {
     _tft.writecommand(0x11);   // SLPOUT
     delay(120);
 #if TFT_BL_PIN >= 0
-    digitalWrite(TFT_BL_PIN, HIGH);
+    for (int v = 0; v <= 255; v += 5) { ledcWrite(BL_LEDC_CH, v); delay(6); }
+    ledcWrite(BL_LEDC_CH, 255);
 #endif
 }
 
