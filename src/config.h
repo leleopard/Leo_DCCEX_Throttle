@@ -12,7 +12,7 @@
 // Throttle slots — one per encoder
 // ---------------------------------------------------------------------------
 #define NUM_THROTTLES        2
-#define LOCO_ADDR_0          3
+#define LOCO_ADDR_0          128  // SBB Cargo
 #define LOCO_ADDR_1          4
 #define DEFAULT_LOCO_ADDRESS LOCO_ADDR_0   // kept for roster highlight
 
