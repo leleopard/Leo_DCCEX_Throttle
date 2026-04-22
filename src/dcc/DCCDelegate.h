@@ -14,6 +14,7 @@ public:
     void receivedRosterList() override;
     void receivedLocoUpdate(Loco *loco) override;
     void receivedLocoBroadcast(int address, int speed, Direction direction, int functionMap) override;
+    void receivedTrackPower(TrackPower state) override;
 
 private:
     QueueHandle_t _eventQueue;

@@ -56,3 +56,10 @@ void DCCDelegate::receivedLocoBroadcast(int address, int speed,
     evt.loco.forward = (direction == Direction::Forward);
     postEvent(evt);
 }
+
+void DCCDelegate::receivedTrackPower(TrackPower state) {
+    Serial.printf("[DCC] Track power: %s\n", state == PowerOn ? "ON" : "OFF");
+    DCCEvent evt{ state == PowerOn ? DCCEventType::TRACK_POWER_ON
+                                   : DCCEventType::TRACK_POWER_OFF, {} };
+    postEvent(evt);
+}

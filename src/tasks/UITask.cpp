@@ -57,6 +57,7 @@ static void uiTask(void *param) {
 
     Screen   activeScreen    = Screen::THROTTLE;
     bool     connected       = false;
+    bool     trackPower      = false;
     bool     rosterReady     = false;
     int      rosterScroll    = 0;
     bool     displaySleeping = false;
@@ -109,8 +110,18 @@ static void uiTask(void *param) {
 
                 case DCCEventType::DISCONNECTED:
                     connected = false;
+                    trackPower = false;
                     if (!displaySleeping && activeScreen == Screen::THROTTLE)
                         display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                    break;
+
+                case DCCEventType::TRACK_POWER_ON:
+                    trackPower = true;
+                    noteActivity();
+                    break;
+
+                case DCCEventType::TRACK_POWER_OFF:
+                    trackPower = false;
                     break;
 
                 case DCCEventType::ROSTER_READY:
@@ -269,9 +280,9 @@ static void uiTask(void *param) {
             estopBtnPrev = estopBtnNow;
         }
 
-        // --- Inactivity sleep (suppressed while connected to command station) ---
+        // --- Inactivity sleep (suppressed while track power is on) ---
 #if SLEEP_TIMEOUT_MS > 0
-        if (!displaySleeping && !connected && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
+        if (!displaySleeping && !trackPower && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
             displaySleeping = true;
             display.sleep();
         }

@@ -26,8 +26,10 @@ struct RosterEntry {
 enum class DCCEventType : uint8_t {
     CONNECTED,
     DISCONNECTED,
-    ROSTER_READY,   // rosterEntries[] / rosterCount updated
-    LOCO_UPDATE,    // speed or direction changed
+    ROSTER_READY,    // rosterEntries[] / rosterCount updated
+    LOCO_UPDATE,     // speed or direction changed
+    TRACK_POWER_ON,
+    TRACK_POWER_OFF,
 };
 
 struct DCCEvent {
