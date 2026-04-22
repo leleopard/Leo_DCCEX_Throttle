@@ -128,12 +128,8 @@ static void uiTask(void *param) {
                         if (evt.loco.address == locoState[i].address) {
                             bool dirChanged = (evt.loco.forward != locoState[i].forward);
                             locoState[i] = evt.loco;
-                            if (!displaySleeping && activeScreen == Screen::THROTTLE) {
-                                if (dirChanged)
-                                    display.drawThrottleColumn(i, locoState[i], connected);
-                                else
-                                    display.drawThrottleSpeed(i, locoState[i]);
-                            }
+                            if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                                display.drawThrottleSpeed(i, locoState[i]);
                             break;
                         }
                     }
@@ -273,9 +269,9 @@ static void uiTask(void *param) {
             estopBtnPrev = estopBtnNow;
         }
 
-        // --- Inactivity sleep ---
+        // --- Inactivity sleep (suppressed while connected to command station) ---
 #if SLEEP_TIMEOUT_MS > 0
-        if (!displaySleeping && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
+        if (!displaySleeping && !connected && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
             displaySleeping = true;
             display.sleep();
         }
