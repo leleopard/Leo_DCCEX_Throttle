@@ -135,9 +135,11 @@ static void uiTask(void *param) {
                     break;
 
                 case DCCEventType::LOCO_UPDATE:
+                    connected  = true;   // infer from live updates
+                    trackPower = true;   // updates only arrive when power is on
+                    lastActivityMs = millis();
                     for (int i = 0; i < NUM_THROTTLES; i++) {
                         if (evt.loco.address == locoState[i].address) {
-                            bool dirChanged = (evt.loco.forward != locoState[i].forward);
                             locoState[i] = evt.loco;
                             if (!displaySleeping && activeScreen == Screen::THROTTLE)
                                 display.drawThrottleSpeed(i, locoState[i]);

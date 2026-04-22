@@ -31,13 +31,14 @@ static void dccTask(void *param) {
 
     DCCEX_SERIAL.begin(DCCEX_BAUD, SERIAL_8N1, DCCEX_RX_PIN, DCCEX_TX_PIN);
     delay(500);
+    Serial.println("[DCC] Serial2 started, connecting to command station...");
 
     DCCDelegate delegate(eventQueue);
     dccexProtocol.setLogStream(&Serial);
     dccexProtocol.setDelegate(&delegate);
     dccexProtocol.connect(&DCCEX_SERIAL);
-
     dccexProtocol.getLists(true, false, false, false);
+    Serial.println("[DCC] connect() and getLists() sent");
 
     UICmd cmd;
     for (;;) {
