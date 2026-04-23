@@ -123,16 +123,20 @@ static void uiTask(void *param) {
                     break;
 
                 case DCCEventType::TRACK_POWER_ON:
-                    trackPower = true;
-                    noteActivity();
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                        display.drawTopBar(trackPower);
+                    if (!trackPower) {
+                        trackPower = true;
+                        noteActivity();
+                        if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                            display.drawTopBar(trackPower);
+                    }
                     break;
 
                 case DCCEventType::TRACK_POWER_OFF:
-                    trackPower = false;
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                        display.drawTopBar(trackPower);
+                    if (trackPower) {
+                        trackPower = false;
+                        if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                            display.drawTopBar(trackPower);
+                    }
                     break;
 
                 case DCCEventType::CURRENT_UPDATE:
