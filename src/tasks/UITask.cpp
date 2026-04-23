@@ -54,6 +54,7 @@ static void uiTask(void *param) {
     LocoState locoState[NUM_THROTTLES];
     locoState[0].address = LOCO_ADDR_0;
     locoState[1].address = LOCO_ADDR_1;
+    uint32_t lastLocalInputMs[NUM_THROTTLES] = {};
 
     Screen   activeScreen    = Screen::THROTTLE;
     bool     connected       = false;
@@ -171,9 +172,16 @@ static void uiTask(void *param) {
                     lastActivityMs = millis();
                     for (int i = 0; i < NUM_THROTTLES; i++) {
                         if (evt.loco.address == locoState[i].address) {
-                            locoState[i] = evt.loco;
-                            if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                                display.drawThrottleSpeed(i, locoState[i]);
+                            // Suppress CS echo for 300ms after local input.
+                            // The CS echoes the old speed before processing our command,
+                            // which would bounce the needle back and forth.
+                            if (millis() - lastLocalInputMs[i] < 300) break;
+                            if (evt.loco.speed    != locoState[i].speed ||
+                                evt.loco.forward  != locoState[i].forward) {
+                                locoState[i] = evt.loco;
+                                if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                                    display.drawThrottleSpeed(i, locoState[i]);
+                            }
                             break;
                         }
                     }
@@ -198,6 +206,7 @@ static void uiTask(void *param) {
                     int newSpeed = constrain(locoState[i].speed + delta * accel, 0, 126);
                     if (newSpeed != locoState[i].speed) {
                         locoState[i].speed = newSpeed;
+                        lastLocalInputMs[i] = millis();
                         display.drawThrottleSpeed(i, locoState[i]);
                         UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
                         xQueueSend(cmdQueue, &cmd, 0);
@@ -207,6 +216,7 @@ static void uiTask(void *param) {
                     noteActivity();
                     locoState[i].forward = !locoState[i].forward;
                     locoState[i].speed   = 0;
+                    lastLocalInputMs[i]  = millis();
                     display.drawThrottleSpeed(i, locoState[i]);
                     UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
                     xQueueSend(cmdQueue, &cmd, 0);
