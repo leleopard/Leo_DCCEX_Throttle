@@ -86,7 +86,7 @@ static constexpr int ROSTER_ROW_H = 36;
 static constexpr int STATUS_H     = 28;
 
 // Header rows: top bar holds buttons+mA, col sub-header holds addresses
-static constexpr int TOP_ROW_H  = 36;   // button/mA row height
+static constexpr int TOP_ROW_H  = 40;   // button/mA row height
 static constexpr int COL_HDR_H  = HDR_H - TOP_ROW_H;  // 24 — address sub-header
 
 // Top bar layout: equal-width PWR button (left) | mA reading (centre) | STOP button (right)

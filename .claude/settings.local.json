@@ -4,7 +4,12 @@
       "WebFetch(domain:dcc-ex.com)",
       "Bash(pio run *)",
       "Bash(py -c \"from PIL import Image; img = Image.open\\(r'C:\\\\Users\\\\stephane\\\\Desktop\\\\leo_DCC_throttle\\\\Gemini_Generated_Image_w23s57w23s57w23s.png'\\); print\\(img.size, img.mode\\)\")",
-      "Bash(py -c *)"
+      "Bash(py -c *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(\"/c/Users/stephane/.platformio/penv/Scripts/pio\" run *)",
+      "Bash(~/.platformio/penv/Scripts/pio run *)"
     ]
   }
 }

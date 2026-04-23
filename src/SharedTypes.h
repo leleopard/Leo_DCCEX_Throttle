@@ -30,11 +30,13 @@ enum class DCCEventType : uint8_t {
     LOCO_UPDATE,     // speed or direction changed
     TRACK_POWER_ON,
     TRACK_POWER_OFF,
+    CURRENT_UPDATE,  // track current reading in mA
 };
 
 struct DCCEvent {
     DCCEventType type;
     LocoState    loco;   // valid for LOCO_UPDATE
+    int          value;  // valid for CURRENT_UPDATE (mA)
 };
 
 // ---------------------------------------------------------------------------
@@ -44,6 +46,8 @@ enum class UICmdType : uint8_t {
     SET_THROTTLE,
     EMERGENCY_STOP,
     REQUEST_ROSTER,
+    POWER_ON,
+    POWER_OFF,
 };
 
 struct UICmd {

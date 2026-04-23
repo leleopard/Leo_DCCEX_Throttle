@@ -77,6 +77,13 @@
 // ---------------------------------------------------------------------------
 #define SLEEP_TIMEOUT_MS  60000UL   // 1 minute; set 0 to disable
 
+// Backlight fade speed (step size=5 out of 255, delay per step in ms)
+// Total fade time ≈ (255/STEP) × DELAY_MS
+// Defaults: fade-out ~612ms (51×12ms), fade-in ~306ms (51×6ms)
+#define BL_FADE_STEP        5
+#define BL_FADE_OUT_MS     70
+#define BL_FADE_IN_MS       24
+
 // ---------------------------------------------------------------------------
 // Throttle behaviour
 // ---------------------------------------------------------------------------

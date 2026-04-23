@@ -91,8 +91,8 @@ static void uiTask(void *param) {
         lastActivityMs = millis();
         if (displaySleeping) {
             displaySleeping = false;
-            display.wake();       // SLPOUT + settle; backlight still off
-            redrawActive();       // full redraw while backlight is off
+            redrawActive();       // populate GRAM while IC is still in SLPIN
+            display.wake();       // SLPOUT — panel activates showing correct content
             display.fadeInBacklight();
             return true;
         }
@@ -330,8 +330,8 @@ static void uiTask(void *param) {
                 lastActivityMs = millis();
                 if (displaySleeping) {
                     displaySleeping = false;
-                    display.wake();
                     display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa);
+                    display.wake();
                     display.fadeInBacklight();
                 } else if (activeScreen == Screen::THROTTLE) {
                     for (int i = 0; i < NUM_THROTTLES; i++)

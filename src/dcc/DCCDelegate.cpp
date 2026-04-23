@@ -60,6 +60,14 @@ void DCCDelegate::receivedLocoBroadcast(int address, int speed,
 void DCCDelegate::receivedTrackPower(TrackPower state) {
     Serial.printf("[DCC] Track power: %s\n", state == PowerOn ? "ON" : "OFF");
     DCCEvent evt{ state == PowerOn ? DCCEventType::TRACK_POWER_ON
-                                   : DCCEventType::TRACK_POWER_OFF, {} };
+                                   : DCCEventType::TRACK_POWER_OFF, {}, 0 };
+    postEvent(evt);
+}
+
+void DCCDelegate::receivedTrackCurrent(char track, int current) {
+    if (track != 'A') return;  // only MAIN track
+    DCCEvent evt{};
+    evt.type  = DCCEventType::CURRENT_UPDATE;
+    evt.value = current;
     postEvent(evt);
 }
