@@ -108,17 +108,21 @@ static void uiTask(void *param) {
         while (xQueueReceive(eventQueue, &evt, 0) == pdTRUE) {
             switch (evt.type) {
                 case DCCEventType::CONNECTED:
-                    connected = true;
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                        display.drawColHeaders(connected, locoState, NUM_THROTTLES);
+                    if (!connected) {
+                        connected = true;
+                        if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                            display.drawColHeaders(connected, locoState, NUM_THROTTLES);
+                    }
                     break;
 
                 case DCCEventType::DISCONNECTED:
-                    connected = false;
-                    trackPower = false;
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE) {
-                        display.drawTopBar(trackPower);
-                        display.drawColHeaders(connected, locoState, NUM_THROTTLES);
+                    if (connected) {
+                        connected = false;
+                        trackPower = false;
+                        if (!displaySleeping && activeScreen == Screen::THROTTLE) {
+                            display.drawTopBar(trackPower);
+                            display.drawColHeaders(connected, locoState, NUM_THROTTLES);
+                        }
                     }
                     break;
 

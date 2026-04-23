@@ -240,73 +240,56 @@ void Display::pushFaceSprite(int col) {
 
 // ---------------------------------------------------------------------------
 // Top bar button zone (x=0..MA_ZONE_X only) — never touches the mA zone.
-// Rendered into a sprite so FreeFont yAdvance fill cannot overflow into the
-// sub-header row below.
 // ---------------------------------------------------------------------------
 void Display::drawTopBar(bool trackPower) {
-    TFT_eSprite s(&_tft);
-    s.createSprite(MA_ZONE_X, TOP_ROW_H);
-    s.fillSprite(COL_HEADER);
+    _tft.fillRect(0, 0, MA_ZONE_X, TOP_ROW_H, COL_HEADER);
 
     uint16_t pwrBg = trackPower ? TFT_GREEN : TFT_RED;
-    s.fillRoundRect(PWR_BTN_X, 2, PWR_BTN_W, TOP_ROW_H - 4, 4, pwrBg);
-    s.setFreeFont(&FreeSansBold9pt7b);
-    s.setTextDatum(MC_DATUM);
-    s.setTextColor(TFT_WHITE, pwrBg);
-    s.drawString(trackPower ? "PWR ON" : "PWR OFF",
-                 PWR_BTN_X + PWR_BTN_W / 2, TOP_ROW_H / 2);
+    _tft.fillRoundRect(PWR_BTN_X, 2, PWR_BTN_W, TOP_ROW_H - 4, 4, pwrBg);
+    _tft.setFreeFont(&FreeSansBold9pt7b);
+    _tft.setTextDatum(MC_DATUM);
+    _tft.setTextColor(TFT_WHITE, pwrBg);
+    _tft.drawString(trackPower ? "PWR ON" : "PWR OFF",
+                    PWR_BTN_X + PWR_BTN_W / 2, TOP_ROW_H / 2);
 
-    s.fillRoundRect(STOP_BTN_X, 2, STOP_BTN_W, TOP_ROW_H - 4, 4, TFT_ORANGE);
-    s.setTextColor(TFT_BLACK, TFT_ORANGE);
-    s.drawString("STOP", STOP_BTN_X + STOP_BTN_W / 2, TOP_ROW_H / 2);
+    _tft.fillRoundRect(STOP_BTN_X, 2, STOP_BTN_W, TOP_ROW_H - 4, 4, TFT_ORANGE);
+    _tft.setTextColor(TFT_BLACK, TFT_ORANGE);
+    _tft.drawString("STOP", STOP_BTN_X + STOP_BTN_W / 2, TOP_ROW_H / 2);
 
-    s.pushSprite(0, 0);
-    s.deleteSprite();
     _tft.setTextDatum(TL_DATUM);
 }
 
 // mA zone (x=MA_ZONE_X..W) — never touches the button area.
-// Sprite-rendered for the same overflow-containment reason.
 void Display::drawCurrentReading(int milliAmps) {
-    TFT_eSprite s(&_tft);
-    s.createSprite(W - MA_ZONE_X, TOP_ROW_H);
-    s.fillSprite(COL_HEADER);
+    _tft.fillRect(MA_ZONE_X, 0, W - MA_ZONE_X, TOP_ROW_H, COL_HEADER);
     if (milliAmps >= 0) {
         char ma[12];
         snprintf(ma, sizeof(ma), "%dmA", milliAmps);
-        s.setFreeFont(&FreeSans9pt7b);
-        s.setTextDatum(MR_DATUM);
-        s.setTextColor(COL_TEXT, COL_HEADER);
-        s.drawString(ma, (W - MA_ZONE_X) - 4, TOP_ROW_H / 2);
+        _tft.setFreeFont(&FreeSans9pt7b);
+        _tft.setTextDatum(MR_DATUM);
+        _tft.setTextColor(COL_TEXT, COL_HEADER);
+        _tft.drawString(ma, W - 4, TOP_ROW_H / 2);
+        _tft.setTextDatum(TL_DATUM);
     }
-    s.pushSprite(MA_ZONE_X, 0);
-    s.deleteSprite();
-    _tft.setTextDatum(TL_DATUM);
 }
 
-// Per-column address sub-header (y=TOP_ROW_H..HDR_H): aligned with gauge columns.
-// Rendered into a temporary sprite so FreeFont yAdvance background-fill overflow
-// is clipped by the sprite bounds and never reaches the column content area.
+// Per-column address sub-header (y=TOP_ROW_H..HDR_H).
 void Display::drawColHeaders(bool connected, const LocoState *locos, int count) {
-    TFT_eSprite s(&_tft);
-    s.createSprite(W, COL_HDR_H);
-    s.fillSprite(COL_HEADER);
-    s.setFreeFont(&FreeSans9pt7b);
-    s.setTextDatum(MC_DATUM);
+    _tft.fillRect(0, TOP_ROW_H, W, COL_HDR_H, COL_HEADER);
+    _tft.setFreeFont(&FreeSans9pt7b);
+    _tft.setTextDatum(MC_DATUM);
     for (int i = 0; i < count && i < NUM_THROTTLES; i++) {
         int cx = i * COL_W + COL_W / 2;
-        int cy = COL_HDR_H / 2;
+        int cy = TOP_ROW_H + COL_HDR_H / 2;
         char addr[8];
         snprintf(addr, sizeof(addr), "#%d", locos[i].address);
-        s.setTextColor(COL_TEXT, COL_HEADER);
-        s.drawString(addr, cx - 6, cy);
-        s.fillCircle(cx + s.textWidth(addr) / 2 + 2, cy, 4,
-                     connected ? TFT_GREEN : TFT_RED);
+        _tft.setTextColor(COL_TEXT, COL_HEADER);
+        _tft.drawString(addr, cx - 6, cy);
+        _tft.fillCircle(cx + _tft.textWidth(addr) / 2 + 2, cy, 4,
+                        connected ? TFT_GREEN : TFT_RED);
     }
     for (int i = 1; i < NUM_THROTTLES; i++)
-        s.drawFastVLine(i * COL_W, 0, COL_HDR_H, COL_DIVIDER);
-    s.pushSprite(0, TOP_ROW_H);   // opaque push — exactly covers y=TOP_ROW_H..HDR_H-1
-    s.deleteSprite();
+        _tft.drawFastVLine(i * COL_W, TOP_ROW_H, COL_HDR_H, COL_DIVIDER);
     _tft.drawFastHLine(0, HDR_H, W, COL_DIVIDER);
     _tft.setTextDatum(TL_DATUM);
 }
