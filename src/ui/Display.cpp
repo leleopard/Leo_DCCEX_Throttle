@@ -177,14 +177,14 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
     _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
                         TFT_ARC_START, TFT_ARC_END, COL_GAUGE_BG, DIAL_BG);
 
-    // Arc ring — three-zone speed fill:
-    //   0–33 % → green,  33–66 % → yellow,  66–100 % → amber
+    // Arc ring — four-zone speed fill:
+    //   0–25 % → green,  25–50 % → yellow,  50–75 % → amber,  75–100 % → red
     // Zone boundaries in TFT arc angle (0° = 6 o'clock, CW):
-    //   Z1 = GAUGE_START + SWEEP/3  → needle 320° → TFT 140°
-    //   Z2 = GAUGE_START + 2*SWEEP/3 → needle 400° → TFT 220°
-    static constexpr uint32_t ARC_Z1 = (GAUGE_START + GAUGE_SWEEP * 1 / 3 + 180) % 360; // 140
-    static constexpr uint32_t ARC_Z2 = (GAUGE_START + GAUGE_SWEEP * 2 / 3 + 180) % 360; // 220
-    static constexpr uint16_t ARC_AMBER = 0xFD00; // amber: full red, half green, no blue
+    //   Z1 = SWEEP/4  → TFT 120°,  Z2 = SWEEP/2 → TFT 180°,  Z3 = 3*SWEEP/4 → TFT 240°
+    static constexpr uint32_t ARC_Z1 = (GAUGE_START + GAUGE_SWEEP * 1 / 4 + 180) % 360; // 120
+    static constexpr uint32_t ARC_Z2 = (GAUGE_START + GAUGE_SWEEP * 2 / 4 + 180) % 360; // 180
+    static constexpr uint32_t ARC_Z3 = (GAUGE_START + GAUGE_SWEEP * 3 / 4 + 180) % 360; // 240
+    static constexpr uint16_t ARC_AMBER = 0xFD00; // full red, half green, no blue
 
     float needleAngle = GAUGE_START + (float)speed / 126.0f * GAUGE_SWEEP;
     if (speed > 0) {
@@ -199,7 +199,11 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
         // Zone 3 — amber
         if (ta > ARC_Z2)
             _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
-                                ARC_Z2, ta, ARC_AMBER, DIAL_BG);
+                                ARC_Z2, ta < ARC_Z3 ? ta : ARC_Z3, ARC_AMBER, DIAL_BG);
+        // Zone 4 — red
+        if (ta > ARC_Z3)
+            _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
+                                ARC_Z3, ta, TFT_RED, DIAL_BG);
     }
 
     // Tick marks only — no speed labels (speed shown as number inside gauge)
