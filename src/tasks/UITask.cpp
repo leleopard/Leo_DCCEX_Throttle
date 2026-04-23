@@ -139,15 +139,17 @@ static void uiTask(void *param) {
                     }
                     break;
 
-                case DCCEventType::CURRENT_UPDATE:
-                    // Exponential moving average (alpha≈0.3): 70% old, 30% new
+                case DCCEventType::CURRENT_UPDATE: {
+                    // Exponential moving average (alpha≈0.1): 90% old, 10% new
+                    int prev = currentMa;
                     if (currentMa < 0)
                         currentMa = evt.value;
                     else
-                        currentMa = (currentMa * 7 + evt.value * 3) / 10;
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                        currentMa = (currentMa * 9 + evt.value) / 10;
+                    if (currentMa != prev && !displaySleeping && activeScreen == Screen::THROTTLE)
                         display.drawCurrentReading(currentMa);
                     break;
+                }
 
                 case DCCEventType::ROSTER_READY:
                     rosterReady = true;
