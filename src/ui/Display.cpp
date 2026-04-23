@@ -293,12 +293,12 @@ void Display::drawColHeaders(bool connected, const LocoState *locos, int count) 
         _tft.fillCircle(cx + _tft.textWidth(addr) / 2 + 2, cy, 4,
                         connected ? TFT_GREEN : TFT_RED);
     }
-    // Clip any pixel that still bled below the sub-header rect, then draw divider
-    _tft.fillRect(0, HDR_H, W, 1, COL_BG);
     // Column divider in sub-header row
     for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, TOP_ROW_H, COL_HDR_H, COL_DIVIDER);
     _tft.drawFastHLine(0, HDR_H, W, COL_DIVIDER);
+    // Clip any FreeFont yAdvance overflow that bled below the divider into column content
+    _tft.fillRect(0, HDR_H + 1, W, 3, COL_BG);
     _tft.setTextDatum(TL_DATUM);
 }
 

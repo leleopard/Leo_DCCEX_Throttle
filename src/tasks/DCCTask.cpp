@@ -31,15 +31,19 @@ static void dccTask(void *param) {
 
     DCCEX_SERIAL.begin(DCCEX_BAUD, SERIAL_8N1, DCCEX_RX_PIN, DCCEX_TX_PIN);
     delay(500);
-    Serial.println("[DCC] Serial2 started, connecting to command station...");
+    // Send raw commands before the protocol library connects — guaranteed delivery
+    // even if the library handshake hasn't completed yet.  Covers reset/reboot.
+    // (Hardware power loss cannot be intercepted in software.)
+    DCCEX_SERIAL.println("<!>");   // emergency stop all locos
+    DCCEX_SERIAL.println("<0>");   // power off all tracks
+    delay(100);
+    Serial.println("[DCC] Serial2 started, emergency stop + power off sent, connecting...");
 
     DCCDelegate delegate(eventQueue);
     dccexProtocol.setLogStream(&Serial);
     dccexProtocol.setDebug(true);
     dccexProtocol.setDelegate(&delegate);
     dccexProtocol.connect(&DCCEX_SERIAL);
-    dccexProtocol.emergencyStop();
-    dccexProtocol.powerOff();
     dccexProtocol.requestServerVersion();
     dccexProtocol.getLists(true, false, false, false);
     Serial.println("[DCC] connect() and getLists() sent");
