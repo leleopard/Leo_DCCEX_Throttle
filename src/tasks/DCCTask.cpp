@@ -35,14 +35,36 @@ static void dccTask(void *param) {
 
     DCCDelegate delegate(eventQueue);
     dccexProtocol.setLogStream(&Serial);
+    dccexProtocol.setDebug(true);
     dccexProtocol.setDelegate(&delegate);
     dccexProtocol.connect(&DCCEX_SERIAL);
+    dccexProtocol.emergencyStop();
+    dccexProtocol.powerOff();
+    dccexProtocol.requestServerVersion();
     dccexProtocol.getLists(true, false, false, false);
     Serial.println("[DCC] connect() and getLists() sent");
 
     UICmd cmd;
+    uint32_t lastCurrentPollMs = 0;
+    uint32_t lastStatusPollMs  = 0;
+    uint32_t lastDiagMs        = 0;
     for (;;) {
         dccexProtocol.check();
+
+        uint32_t now = millis();
+
+        // Poll track current every 2 seconds
+        if (now - lastCurrentPollMs >= 1000) {
+            lastCurrentPollMs = now;
+            dccexProtocol.requestTrackCurrents();
+        }
+
+        // Poll full status (power state) every 10 seconds to stay in sync
+        // with JMRI or any external source that may change track power
+        if (now - lastStatusPollMs >= 10000) {
+            lastStatusPollMs = now;
+            dccexProtocol.requestServerVersion();
+        }
 
         // Resolve active locos after roster arrives
         if (dccexProtocol.receivedRoster()) {
@@ -66,7 +88,19 @@ static void dccTask(void *param) {
                 case UICmdType::REQUEST_ROSTER:
                     dccexProtocol.getLists(true, false, false, false);
                     break;
+                case UICmdType::POWER_ON:
+                    dccexProtocol.powerOn();
+                    break;
+                case UICmdType::POWER_OFF:
+                    dccexProtocol.powerOff();
+                    break;
             }
+        }
+
+        if (now - lastDiagMs >= 10000) {
+            lastDiagMs = now;
+            Serial.printf("[DCC] stack free: %4u words\n",
+                          uxTaskGetStackHighWaterMark(NULL));
         }
 
         vTaskDelay(pdMS_TO_TICKS(1));

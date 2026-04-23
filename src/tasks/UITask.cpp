@@ -60,6 +60,7 @@ static void uiTask(void *param) {
     bool     trackPower      = false;
     bool     rosterReady     = false;
     int      rosterScroll    = 0;
+    int      currentMa       = -1;
     bool     displaySleeping = false;
     uint32_t lastActivityMs  = millis();
 
@@ -68,12 +69,12 @@ static void uiTask(void *param) {
 #endif
     bool estopBtnPrev = HIGH;
 
-    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa);
 
     // Redraw whichever screen is active (called after waking)
     auto redrawActive = [&]() {
         if (activeScreen == Screen::THROTTLE) {
-            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa);
         } else {
             if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll);
@@ -98,30 +99,50 @@ static void uiTask(void *param) {
     };
 
     DCCEvent evt;
+    uint32_t loopMaxMs  = 0;
+    uint32_t lastDiagMs = 0;
     for (;;) {
+        uint32_t loopStart = millis();
+
         // --- Process incoming DCC events ---
         while (xQueueReceive(eventQueue, &evt, 0) == pdTRUE) {
             switch (evt.type) {
                 case DCCEventType::CONNECTED:
                     connected = true;
                     if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                        display.drawColHeaders(connected, locoState, NUM_THROTTLES);
                     break;
 
                 case DCCEventType::DISCONNECTED:
                     connected = false;
                     trackPower = false;
-                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
-                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE) {
+                        display.drawTopBar(trackPower);
+                        display.drawColHeaders(connected, locoState, NUM_THROTTLES);
+                    }
                     break;
 
                 case DCCEventType::TRACK_POWER_ON:
                     trackPower = true;
                     noteActivity();
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                        display.drawTopBar(trackPower);
                     break;
 
                 case DCCEventType::TRACK_POWER_OFF:
                     trackPower = false;
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                        display.drawTopBar(trackPower);
+                    break;
+
+                case DCCEventType::CURRENT_UPDATE:
+                    // Exponential moving average (alpha≈0.3): 70% old, 30% new
+                    if (currentMa < 0)
+                        currentMa = evt.value;
+                    else
+                        currentMa = (currentMa * 7 + evt.value * 3) / 10;
+                    if (!displaySleeping && activeScreen == Screen::THROTTLE)
+                        display.drawCurrentReading(currentMa);
                     break;
 
                 case DCCEventType::ROSTER_READY:
@@ -154,7 +175,9 @@ static void uiTask(void *param) {
         if (activeScreen == Screen::THROTTLE) {
             static uint32_t lastEncMs[NUM_THROTTLES] = {};
             for (int i = 0; i < NUM_THROTTLES; i++) {
-                int delta = encoders.getDelta(i);
+                int raw = encoders.getDelta(i);
+                // Cap per-iteration delta to avoid burst jumps during long redraws
+                int delta = constrain(raw, -2, 2);
                 if (delta != 0) {
                     uint32_t now = millis();
                     uint32_t elapsed = now - lastEncMs[i];
@@ -190,21 +213,35 @@ static void uiTask(void *param) {
         // detection removed until calibration is implemented.
 #if DISPLAY_480
         {
+            static uint32_t lastTouchMs = 0;
             uint16_t tx, ty;
-            if (display.getTouch(tx, ty)) {
+            // Timestamp-based debounce — no blocking delay so encoder keeps running
+            if ((millis() - lastTouchMs) >= 280 && display.getTouch(tx, ty)) {
+                lastTouchMs = millis();
                 bool wasSleeping = noteActivity();
                 if (!wasSleeping) {
-                    if (activeScreen == Screen::THROTTLE) {
+                    if (ty < Display::HDR_H) {
+                        TopBarZone zone = display.hitTestTopBar(tx, ty);
+                        if (zone == TopBarZone::POWER_BTN) {
+                            UICmd cmd{ trackPower ? UICmdType::POWER_OFF : UICmdType::POWER_ON, 0, {} };
+                            xQueueSend(cmdQueue, &cmd, 0);
+                        } else if (zone == TopBarZone::STOP_BTN) {
+                            for (int i = 0; i < NUM_THROTTLES; i++) locoState[i].speed = 0;
+                            UICmd cmd{ UICmdType::EMERGENCY_STOP, 0, {} };
+                            xQueueSend(cmdQueue, &cmd, 0);
+                            for (int i = 0; i < NUM_THROTTLES; i++)
+                                display.drawThrottleSpeed(i, locoState[i]);
+                        }
+                    } else if (activeScreen == Screen::THROTTLE) {
                         int col = tx / (SCREEN_W / NUM_THROTTLES);
                         if (col >= 0 && col < NUM_THROTTLES) {
                             locoState[col].forward = !locoState[col].forward;
                             locoState[col].speed   = 0;
-                            display.drawThrottleColumn(col, locoState[col], connected);
+                            display.drawThrottleSpeed(col, locoState[col]);
                             UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, locoState[col] };
                             xQueueSend(cmdQueue, &cmd, 0);
                         }
                     } else {
-                        // Roster screen — tap upper half scrolls up, lower half scrolls down
                         int newScroll = rosterScroll + (ty < SCREEN_H / 2 ? -1 : 1);
                         newScroll = constrain(newScroll, 0, max(0, rosterCount - Display::ROSTER_VISIBLE_ROWS));
                         if (newScroll != rosterScroll) {
@@ -216,7 +253,6 @@ static void uiTask(void *param) {
                         }
                     }
                 }
-                vTaskDelay(pdMS_TO_TICKS(300));   // debounce tap
             }
         }
 #endif
@@ -255,7 +291,7 @@ static void uiTask(void *param) {
                         }
                     } else {
                         activeScreen = Screen::THROTTLE;
-                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
+                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa);
                     }
                 }
             }
@@ -275,9 +311,12 @@ static void uiTask(void *param) {
                 if (displaySleeping) {
                     displaySleeping = false;
                     display.wake();
+                    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa);
+                    display.fadeInBacklight();
+                } else if (activeScreen == Screen::THROTTLE) {
+                    for (int i = 0; i < NUM_THROTTLES; i++)
+                        display.drawThrottleSpeed(i, locoState[i]);
                 }
-                if (activeScreen == Screen::THROTTLE)
-                    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected);
             }
             estopBtnPrev = estopBtnNow;
         }
@@ -289,6 +328,19 @@ static void uiTask(void *param) {
             display.sleep();
         }
 #endif
+
+        // --- Loop timing + periodic diagnostics ---
+        uint32_t loopMs = millis() - loopStart;
+        if (loopMs > loopMaxMs) loopMaxMs = loopMs;
+
+        if (millis() - lastDiagMs >= 10000) {
+            lastDiagMs = millis();
+            Serial.printf("[UI]  stack free: %4u words  heap: %6u B  loop max: %ums\n",
+                          uxTaskGetStackHighWaterMark(NULL),
+                          esp_get_free_heap_size(),
+                          loopMaxMs);
+            loopMaxMs = 0;
+        }
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
