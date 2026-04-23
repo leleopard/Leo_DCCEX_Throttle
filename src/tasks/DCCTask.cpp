@@ -44,6 +44,10 @@ static void dccTask(void *param) {
     dccexProtocol.setDebug(true);
     dccexProtocol.setDelegate(&delegate);
     dccexProtocol.connect(&DCCEX_SERIAL);
+    // Pre-create loco objects so throttles work immediately without waiting for
+    // the roster response (which can take several seconds to arrive).
+    for (int i = 0; i < NUM_THROTTLES; i++)
+        activeLoco[i] = new Loco(LOCO_ADDRESSES[i], LocoSource::LocoSourceEntry);
     dccexProtocol.requestServerVersion();
     dccexProtocol.getLists(true, false, false, false);
     Serial.println("[DCC] connect() and getLists() sent");

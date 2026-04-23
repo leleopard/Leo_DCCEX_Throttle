@@ -89,12 +89,13 @@ static constexpr int STATUS_H     = 28;
 static constexpr int TOP_ROW_H  = 36;   // button/mA row height
 static constexpr int COL_HDR_H  = HDR_H - TOP_ROW_H;  // 24 — address sub-header
 
-// Top bar button zones (x ranges, y always 0..TOP_ROW_H)
-static constexpr int PWR_BTN_X  = 2;
-static constexpr int PWR_BTN_W  = 92;
-static constexpr int STOP_BTN_X = 98;
-static constexpr int STOP_BTN_W = 72;
-static constexpr int MA_ZONE_X  = W - 88;  // mA text zone start
+// Top bar layout: equal-width PWR button (left) | mA reading (centre) | STOP button (right)
+static constexpr int BTN_W      = 96;
+static constexpr int BTN_MARGIN = 4;
+static constexpr int PWR_BTN_X  = BTN_MARGIN;                       // 4
+static constexpr int STOP_BTN_X = W - BTN_W - BTN_MARGIN;           // 380
+static constexpr int MA_START   = PWR_BTN_X + BTN_W + BTN_MARGIN;   // 104  (centre zone left)
+static constexpr int MA_END     = STOP_BTN_X - BTN_MARGIN;          // 376  (centre zone right)
 #else
 static constexpr int GAUGE_R     = 68;
 static constexpr int BEZEL_W     = 6;
@@ -260,36 +261,38 @@ void Display::pushFaceSprite(int col) {
 }
 
 // ---------------------------------------------------------------------------
-// Top bar button zone (x=0..MA_ZONE_X only) — never touches the mA zone.
+// Top bar: PWR button (left) and STOP button (right). Centre zone untouched.
 // ---------------------------------------------------------------------------
 void Display::drawTopBar(bool trackPower) {
-    _tft.fillRect(0, 0, MA_ZONE_X, TOP_ROW_H, COL_HEADER);
+    // Fill left and right button zones only — centre (mA) is independent.
+    _tft.fillRect(0,         0, MA_START,      TOP_ROW_H, COL_HEADER);
+    _tft.fillRect(MA_END, 0, W - MA_END, TOP_ROW_H, COL_HEADER);
 
     uint16_t pwrBg = trackPower ? TFT_GREEN : TFT_RED;
-    _tft.fillRoundRect(PWR_BTN_X, 2, PWR_BTN_W, TOP_ROW_H - 4, 4, pwrBg);
+    _tft.fillRoundRect(PWR_BTN_X, 2, BTN_W, TOP_ROW_H - 4, 4, pwrBg);
     _tft.setFreeFont(&FreeSansBold9pt7b);
     _tft.setTextDatum(MC_DATUM);
     _tft.setTextColor(TFT_WHITE, pwrBg);
     _tft.drawString(trackPower ? "PWR ON" : "PWR OFF",
-                    PWR_BTN_X + PWR_BTN_W / 2, TOP_ROW_H / 2);
+                    PWR_BTN_X + BTN_W / 2, TOP_ROW_H / 2);
 
-    _tft.fillRoundRect(STOP_BTN_X, 2, STOP_BTN_W, TOP_ROW_H - 4, 4, TFT_ORANGE);
+    _tft.fillRoundRect(STOP_BTN_X, 2, BTN_W, TOP_ROW_H - 4, 4, TFT_ORANGE);
     _tft.setTextColor(TFT_BLACK, TFT_ORANGE);
-    _tft.drawString("STOP", STOP_BTN_X + STOP_BTN_W / 2, TOP_ROW_H / 2);
+    _tft.drawString("STOP", STOP_BTN_X + BTN_W / 2, TOP_ROW_H / 2);
 
     _tft.setTextDatum(TL_DATUM);
 }
 
-// mA zone (x=MA_ZONE_X..W) — never touches the button area.
+// Centre zone (mA reading) — never touches the button areas.
 void Display::drawCurrentReading(int milliAmps) {
-    _tft.fillRect(MA_ZONE_X, 0, W - MA_ZONE_X, TOP_ROW_H, COL_HEADER);
+    _tft.fillRect(MA_START, 0, MA_END - MA_START, TOP_ROW_H, COL_HEADER);
     if (milliAmps >= 0) {
-        char ma[12];
-        snprintf(ma, sizeof(ma), "%dmA", milliAmps);
+        char ma[16];
+        snprintf(ma, sizeof(ma), "%d mA", milliAmps);   // space between value and unit
         _tft.setFreeFont(&FreeSans9pt7b);
-        _tft.setTextDatum(MR_DATUM);
+        _tft.setTextDatum(MC_DATUM);
         _tft.setTextColor(COL_TEXT, COL_HEADER);
-        _tft.drawString(ma, W - 4, TOP_ROW_H / 2);
+        _tft.drawString(ma, (MA_START + MA_END) / 2, TOP_ROW_H / 2);
         _tft.setTextDatum(TL_DATUM);
     }
 }
@@ -419,9 +422,9 @@ void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
 // ---------------------------------------------------------------------------
 #if DISPLAY_480
 TopBarZone Display::hitTestTopBar(uint16_t tx, uint16_t ty) {
-    if (ty >= (uint16_t)TOP_ROW_H) return TopBarZone::NONE;  // sub-header row: no buttons
-    if (tx >= PWR_BTN_X && tx < PWR_BTN_X + PWR_BTN_W)    return TopBarZone::POWER_BTN;
-    if (tx >= STOP_BTN_X && tx < STOP_BTN_X + STOP_BTN_W) return TopBarZone::STOP_BTN;
+    if (ty >= (uint16_t)TOP_ROW_H) return TopBarZone::NONE;
+    if (tx >= (uint16_t)PWR_BTN_X  && tx < (uint16_t)(PWR_BTN_X  + BTN_W)) return TopBarZone::POWER_BTN;
+    if (tx >= (uint16_t)STOP_BTN_X && tx < (uint16_t)(STOP_BTN_X + BTN_W)) return TopBarZone::STOP_BTN;
     return TopBarZone::NONE;
 }
 #endif
