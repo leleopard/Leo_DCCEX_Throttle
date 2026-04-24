@@ -20,7 +20,7 @@ void DCCDelegate::receivedServerVersion(int major, int minor, int patch) {
 }
 
 void DCCDelegate::receivedRosterList() {
-    if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
         rosterCount = 0;
         for (Loco *loco = dccexProtocol.roster->getFirst();
              loco && rosterCount < MAX_ROSTER_SIZE;
@@ -32,6 +32,11 @@ void DCCDelegate::receivedRosterList() {
             rosterCount++;
         }
         xSemaphoreGive(rosterMutex);
+        Serial.printf("[DCC] Roster received: %d entries\n", rosterCount);
+        for (int i = 0; i < rosterCount; i++)
+            Serial.printf("  [%d] addr=%d  name=%s\n", i, rosterEntries[i].address, rosterEntries[i].name);
+    } else {
+        Serial.println("[DCC] ERROR: roster mutex timeout — entries not stored");
     }
     DCCEvent evt{ DCCEventType::ROSTER_READY, {} };
     postEvent(evt);

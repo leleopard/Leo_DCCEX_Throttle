@@ -41,7 +41,7 @@ static void dccTask(void *param) {
 
     DCCDelegate delegate(eventQueue);
     dccexProtocol.setLogStream(&Serial);
-    dccexProtocol.setDebug(true);
+    dccexProtocol.setDebug(false);
     dccexProtocol.setDelegate(&delegate);
     dccexProtocol.connect(&DCCEX_SERIAL);
     // Pre-create loco objects so throttles work immediately without waiting for
@@ -55,6 +55,7 @@ static void dccTask(void *param) {
     UICmd cmd;
     uint32_t lastCurrentPollMs = 0;
     uint32_t lastStatusPollMs  = 0;
+    uint32_t lastRosterPollMs  = 0;
     uint32_t lastDiagMs        = 0;
     for (;;) {
         dccexProtocol.check();
@@ -72,6 +73,24 @@ static void dccTask(void *param) {
         if (now - lastStatusPollMs >= 10000) {
             lastStatusPollMs = now;
             dccexProtocol.requestServerVersion();
+        }
+
+        // Retry roster request every 8 seconds until received
+        if (!dccexProtocol.receivedRoster() && now - lastRosterPollMs >= 8000) {
+            lastRosterPollMs = now;
+            Serial.println("[DCC] Roster not yet received — retrying <JR>");
+            dccexProtocol.refreshRoster();
+            dccexProtocol.getLists(true, false, false, false);
+        }
+
+        // The library sets receivedRoster()=true for empty rosters without calling the
+        // delegate callback, so fire ROSTER_READY ourselves once the flag is set.
+        static bool rosterReadyFired = false;
+        if (!rosterReadyFired && dccexProtocol.receivedRoster()) {
+            rosterReadyFired = true;
+            Serial.printf("[DCC] Roster flag set by library (count via delegate: %d)\n", rosterCount);
+            DCCEvent evt{ DCCEventType::ROSTER_READY, {}, 0 };
+            xQueueSend(eventQueue, &evt, 0);
         }
 
         // Resolve active locos after roster arrives
@@ -94,6 +113,7 @@ static void dccTask(void *param) {
                     dccexProtocol.emergencyStop();
                     break;
                 case UICmdType::REQUEST_ROSTER:
+                    dccexProtocol.refreshRoster();
                     dccexProtocol.getLists(true, false, false, false);
                     break;
                 case UICmdType::POWER_ON:
@@ -101,6 +121,12 @@ static void dccTask(void *param) {
                     break;
                 case UICmdType::POWER_OFF:
                     dccexProtocol.powerOff();
+                    break;
+                case UICmdType::ASSIGN_LOCO:
+                    activeLoco[cmd.index] = dccexProtocol.findLocoInRoster(cmd.loco.address);
+                    if (!activeLoco[cmd.index])
+                        activeLoco[cmd.index] = new Loco(cmd.loco.address, LocoSource::LocoSourceEntry);
+                    Serial.printf("[DCC] Throttle %d → addr %d\n", cmd.index, cmd.loco.address);
                     break;
             }
         }

@@ -48,6 +48,7 @@ enum class UICmdType : uint8_t {
     REQUEST_ROSTER,
     POWER_ON,
     POWER_OFF,
+    ASSIGN_LOCO,   // reassign throttle slot to a different address
 };
 
 struct UICmd {

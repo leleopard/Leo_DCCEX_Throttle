@@ -62,12 +62,12 @@ static constexpr uint32_t TFT_ARC_END   = (GAUGE_START + GAUGE_SWEEP + 180) % 36
 static constexpr int GAUGE_R     = 100;
 static constexpr int BEZEL_W     = 8;
 static constexpr int GAUGE_THICK = 20;
-static constexpr int GAUGE_CY    = 165;
+static constexpr int GAUGE_CY    = 177;
 
 static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 92
 static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 72
 
-static constexpr int SPRITE_R    = ARC_R + 1;               // 93 — sprite half-size
+static constexpr int SPRITE_R    = GAUGE_R + 1;              // 101 — full bezel in sprite
 
 static constexpr int NEEDLE_R    = 78;
 static constexpr int NEEDLE_W    = 4;
@@ -81,13 +81,12 @@ static constexpr int SPD_INNER_Y = 65;   // speed number offset below sprite cen
 static constexpr int SPD_BOX_W   = 72;
 static constexpr int SPD_BOX_H   = 36;
 
-static constexpr int ROSTER_HDR_H = 48;
 static constexpr int ROSTER_ROW_H = 36;
 static constexpr int STATUS_H     = 28;
 
 // Header rows: top bar holds buttons+mA, col sub-header holds addresses
 static constexpr int TOP_ROW_H  = 40;   // button/mA row height
-static constexpr int COL_HDR_H  = HDR_H - TOP_ROW_H;  // 24 — address sub-header
+static constexpr int COL_HDR_H  = HDR_H - TOP_ROW_H;  // 36 — address sub-header
 
 // Top bar layout: equal-width PWR button (left) | mA reading (centre) | STOP button (right)
 static constexpr int BTN_W      = 96;
@@ -147,18 +146,6 @@ void Display::begin() {
 // Gauge helpers
 // ---------------------------------------------------------------------------
 
-// Chrome bezel (static, drawn once per full column redraw; not part of sprite).
-void Display::drawBezelAndDial(int col) {
-    int cx = col * COL_W + COL_W / 2;
-    int cy = GAUGE_CY;
-    _tft.fillCircle(cx, cy, GAUGE_R,               CHR_DARK);
-    _tft.fillCircle(cx, cy, GAUGE_R - 1,           CHR_BRIGHT);
-    _tft.fillCircle(cx, cy, GAUGE_R - 2,           CHR_MED);
-    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W + 2, CHR_BRIGHT);
-    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W + 1, CHR_DARK);
-    _tft.fillCircle(cx, cy, GAUGE_R - BEZEL_W,     DIAL_BG);
-}
-
 // Render arc ring, tick marks, needle and hub into _face sprite.
 // The sprite uses TFT_TRANSPARENT for corner pixels outside the gauge circle,
 // so pushFaceSprite skips those and the chrome bezel behind them is preserved.
@@ -170,9 +157,14 @@ void Display::renderFaceToSprite(int col, const LocoState &loco) {
     const int scy = SPRITE_R;
     const int speed = loco.speed;
 
-    // Transparent background for corners; dial face fills the circular area
+    // Transparent corners; chrome bezel then white dial — all rendered atomically in sprite
     _face.fillSprite(TFT_TRANSPARENT);
-    _face.fillCircle(scx, scy, ARC_R + 1, DIAL_BG);
+    _face.fillCircle(scx, scy, GAUGE_R,               CHR_DARK);
+    _face.fillCircle(scx, scy, GAUGE_R - 1,           CHR_BRIGHT);
+    _face.fillCircle(scx, scy, GAUGE_R - 2,           CHR_MED);
+    _face.fillCircle(scx, scy, GAUGE_R - BEZEL_W + 2, CHR_BRIGHT);
+    _face.fillCircle(scx, scy, GAUGE_R - BEZEL_W + 1, CHR_DARK);
+    _face.fillCircle(scx, scy, GAUGE_R - BEZEL_W,     DIAL_BG);
 
     // Arc ring — background (full sweep, dark)
     _face.drawSmoothArc(scx, scy, ARC_R, ARC_IR,
@@ -297,21 +289,48 @@ void Display::drawCurrentReading(int milliAmps) {
     }
 }
 
-// Per-column address sub-header (y=TOP_ROW_H..HDR_H).
-void Display::drawColHeaders(bool connected, const LocoState *locos, int count) {
+// Per-column sub-header (y=TOP_ROW_H..HDR_H): "Name  #addr  ●"
+// Dot right-anchored; address immediately left; name fills remaining space (truncated).
+void Display::drawColHeaders(bool connected, const LocoState *locos, int count,
+                             const char (*names)[32]) {
     _tft.fillRect(0, TOP_ROW_H, W, COL_HDR_H, COL_HEADER);
     _tft.setFreeFont(&FreeSans9pt7b);
-    _tft.setTextDatum(MC_DATUM);
+    _tft.setTextDatum(ML_DATUM);
+
+    const int dotR   = 5;
+    const int gap    = 6;
+    const int margin = 7;
+
     for (int i = 0; i < count && i < NUM_THROTTLES; i++) {
-        int cx = i * COL_W + COL_W / 2;
-        int cy = TOP_ROW_H + COL_HDR_H / 2;
-        char addr[8];
-        snprintf(addr, sizeof(addr), "#%d", locos[i].address);
-        _tft.setTextColor(COL_TEXT, COL_HEADER);
-        _tft.drawString(addr, cx - 6, cy);
-        _tft.fillCircle(cx + _tft.textWidth(addr) / 2 + 2, cy, 4,
-                        connected ? TFT_GREEN : TFT_RED);
+        int colL = i * COL_W;
+        int cy   = TOP_ROW_H + COL_HDR_H / 2;
+
+        char addrStr[8];
+        snprintf(addrStr, sizeof(addrStr), "#%d", locos[i].address);
+        int addrW = _tft.textWidth(addrStr);
+
+        // Right-anchor: dot, then address to its left
+        int dotCx = colL + COL_W - margin - dotR;
+        int addrX = dotCx - dotR - gap - addrW;
+
+        // Name in remaining left space
+        int nameMaxW = addrX - gap - (colL + margin);
+        char truncName[32] = {};
+        if (names && names[i][0] && nameMaxW > 4) {
+            strncpy(truncName, names[i], sizeof(truncName) - 1);
+            while (truncName[0] && _tft.textWidth(truncName) > nameMaxW)
+                truncName[strlen(truncName) - 1] = '\0';
+        }
+
+        if (truncName[0]) {
+            _tft.setTextColor(COL_TEXT, COL_HEADER);
+            _tft.drawString(truncName, colL + margin, cy);
+        }
+        _tft.setTextColor(COL_ACCENT, COL_HEADER);
+        _tft.drawString(addrStr, addrX, cy);
+        _tft.fillCircle(dotCx, cy, dotR, connected ? TFT_GREEN : TFT_RED);
     }
+
     for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, TOP_ROW_H, COL_HDR_H, COL_DIVIDER);
     _tft.drawFastHLine(0, HDR_H, W, COL_DIVIDER);
@@ -321,29 +340,30 @@ void Display::drawColHeaders(bool connected, const LocoState *locos, int count) 
 
 // ---------------------------------------------------------------------------
 // Throttle screen — full redraw of all columns
+// Batch strategy: fill entire body first, then push all gauge sprites, then headers.
+// Bezel layers are baked into the sprite so each push is one atomic SPI burst —
+// no partial chrome ring is ever visible.
 // ---------------------------------------------------------------------------
 void Display::drawThrottleScreen(const LocoState *locos, int count, bool connected,
-                                 bool trackPower, int milliAmps) {
-    // No fillScreen — per-column fills cover the whole body area (saves ~120ms at 20MHz SPI).
-    // Draw columns first, then header rows on top, then divider last so it's not overwritten.
-    for (int i = 0; i < count && i < NUM_THROTTLES; i++)
-        drawThrottleColumn(i, locos[i], connected);
+                                 bool trackPower, int milliAmps, const char (*names)[32]) {
+    // One fillRect for the entire body eliminates per-column black flashes.
+    _tft.fillRect(0, HDR_H + 1, W, H - HDR_H - 1, COL_BG);
+    for (int i = 0; i < count && i < NUM_THROTTLES; i++) {
+        renderFaceToSprite(i, locos[i]);
+        pushFaceSprite(i);
+    }
     drawTopBar(trackPower);
     drawCurrentReading(milliAmps);
-    drawColHeaders(connected, locos, count);
+    drawColHeaders(connected, locos, count, names);
     for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, HDR_H, H - HDR_H, COL_DIVIDER);
 }
 
 // ---------------------------------------------------------------------------
-// Single column full redraw: static bezel + gauge face (no per-col header)
+// Single column full redraw (used for direction-change redraws etc.)
 // ---------------------------------------------------------------------------
 void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected) {
-    int x = col * COL_W;
-    // Fill full COL_W (not COL_W-1) so adjacent columns together cover every pixel
-    // without needing a fillScreen.  Divider is redrawn on top by drawThrottleScreen.
-    _tft.fillRect(x, HDR_H + 1, COL_W, H - HDR_H - 1, COL_BG);
-    drawBezelAndDial(col);
+    _tft.fillRect(col * COL_W, HDR_H + 1, COL_W, H - HDR_H - 1, COL_BG);
     renderFaceToSprite(col, loco);
     pushFaceSprite(col);
 }
@@ -359,61 +379,80 @@ void Display::drawThrottleSpeed(int col, const LocoState &loco) {
 
 // ---------------------------------------------------------------------------
 // Roster screen
+// Rows start at HDR_H so touch zones match the throttle screen zones:
+//   ty < TOP_BAR_H  → button row (PWR/STOP still work)
+//   TOP_BAR_H ≤ ty < HDR_H  → sub-header "tap to go back"
+//   ty ≥ HDR_H  → row tap → assign loco to throttle slot
 // ---------------------------------------------------------------------------
-void Display::drawRosterScreen(const RosterEntry *entries, int count, int scrollOffset) {
+void Display::drawRosterScreen(const RosterEntry *entries, int count, int scrollOffset,
+                               int highlightAddr, bool received) {
     _tft.fillScreen(COL_BG);
-    drawHeader("Roster", COL_SELECTED, COL_TEXT);
+
+    // Full-height header bar (tap anywhere → back to throttle)
+    _tft.fillRect(0, 0, W, HDR_H, COL_HEADER);
+
+    // "ROSTER" title, left-aligned
+    _tft.setFreeFont(&FreeSansBold9pt7b);
+    _tft.setTextDatum(ML_DATUM);
+    _tft.setTextColor(COL_TEXT, COL_HEADER);
+    _tft.drawString("ROSTER", 14, HDR_H / 2);
+
+    // Back arrow icon (left-pointing solid triangle) on the right
+    {
+        int cx = W - 30, cy = HDR_H / 2, hw = 12, hv = 14;
+        _tft.fillTriangle(cx - hw, cy, cx + hw, cy - hv, cx + hw, cy + hv, COL_TEXT);
+    }
+
+    _tft.drawFastHLine(0, HDR_H, W, COL_DIVIDER);
 
     if (count == 0) {
-        _tft.setTextSize(1);
+        _tft.setTextDatum(MC_DATUM);
         _tft.setTextColor(COL_TEXT, COL_BG);
-        _tft.setCursor(16, 80);
-        _tft.print("No roster received yet.");
+        _tft.drawString(received ? "CS roster is empty" : "Waiting for CS roster...",
+                        W / 2, HDR_H + (H - HDR_H) / 2);
+        _tft.setTextFont(1);
+        _tft.setTextDatum(TL_DATUM);
         return;
     }
 
-    int y       = ROSTER_HDR_H + 4;
     int visible = min(ROSTER_VISIBLE_ROWS, count - scrollOffset);
-
     for (int i = 0; i < visible; i++) {
         int      idx   = scrollOffset + i;
-        bool     hi    = (entries[idx].address == DEFAULT_LOCO_ADDRESS);
-        uint16_t rowBg = hi ? COL_SELECTED : COL_BG;
+        bool     hi    = (entries[idx].address == highlightAddr);
+        uint16_t rowBg = hi ? COL_SELECTED : (i & 1 ? COL_HEADER : COL_BG);
+        int      rowY  = HDR_H + i * ROSTER_ROW_H;
 
-        _tft.fillRect(0, y, W, ROSTER_ROW_H - 2, rowBg);
+        _tft.fillRect(0, rowY, W, ROSTER_ROW_H - 1, rowBg);
+        _tft.drawFastHLine(0, rowY + ROSTER_ROW_H - 1, W, COL_DIVIDER);
 
-        _tft.setTextSize(1);
-        _tft.setTextColor(COL_ACCENT, rowBg);
-        _tft.setCursor(6, y + 8);
         char addr[8];
-        snprintf(addr, sizeof(addr), "#%-4d", entries[idx].address);
-        _tft.print(addr);
+        snprintf(addr, sizeof(addr), "#%d", entries[idx].address);
+        _tft.setFreeFont(&FreeSansBold9pt7b);
+        _tft.setTextDatum(ML_DATUM);
+        _tft.setTextColor(COL_ACCENT, rowBg);
+        _tft.drawString(addr, 8, rowY + ROSTER_ROW_H / 2);
 
+        _tft.setFreeFont(&FreeSans9pt7b);
         _tft.setTextColor(COL_TEXT, rowBg);
-        _tft.setCursor(60, y + 8);
-        _tft.print(entries[idx].name[0] ? entries[idx].name : "(unnamed)");
-
-        y += ROSTER_ROW_H;
+        _tft.drawString(entries[idx].name[0] ? entries[idx].name : "(unnamed)",
+                        80, rowY + ROSTER_ROW_H / 2);
     }
 
+    // Status bar below rows
+    _tft.setFreeFont(&FreeSans9pt7b);
+    _tft.setTextDatum(MC_DATUM);
+    _tft.setTextColor(0x8410, COL_BG);
+    int statusY = HDR_H + visible * ROSTER_ROW_H;
     if (count > ROSTER_VISIBLE_ROWS) {
-        _tft.setTextSize(1);
-        _tft.setTextColor(COL_TEXT, COL_BG);
-        _tft.setCursor(8, H - STATUS_H - 14);
-        char msg[32];
-        snprintf(msg, sizeof(msg), "%d-%d / %d  (enc1 scrolls)",
+        char msg[24];
+        snprintf(msg, sizeof(msg), "%d-%d / %d",
                  scrollOffset + 1, scrollOffset + visible, count);
-        _tft.print(msg);
+        _tft.drawString(msg, W / 2, statusY + 14);
     }
-}
+    _tft.drawString("tap row to assign loco", W / 2, H - 10);
 
-// ---------------------------------------------------------------------------
-void Display::drawHeader(const char *title, uint16_t bg, uint16_t fg) {
-    _tft.fillRect(0, 0, W, ROSTER_HDR_H, bg);
-    _tft.setTextColor(fg, bg);
-    _tft.setTextSize(2);
-    _tft.setCursor(8, ROSTER_HDR_H / 4);
-    _tft.print(title);
+    _tft.setTextFont(1);
+    _tft.setTextDatum(TL_DATUM);
 }
 
 
@@ -441,8 +480,42 @@ void Display::sleep() {
 }
 
 void Display::wake() {
-    _tft.writecommand(0x11);   // SLPOUT
-    delay(120);                // display IC mandatory settle time; backlight stays off
+    // Software reset clears any register corruption (colour inversion, MADCTL, etc.)
+    // then re-runs the full ST7796 init register sequence.  Backlight stays off throughout
+    // so the user sees nothing during the ~300ms reinit + redraw that follows.
+    _tft.writecommand(0x01);  delay(120);   // SWRST — mandatory 120ms settle
+    _tft.writecommand(0x11);  delay(120);   // SLPOUT — mandatory 120ms settle
+
+    // Restore all ST7796 registers (mirrors ST7796_Init.h, skipping non-mandatory delays)
+    _tft.writecommand(0xF0); _tft.writedata(0xC3);   // enable extension cmd set 2 part I
+    _tft.writecommand(0xF0); _tft.writedata(0x96);   // enable extension cmd set 2 part II
+    _tft.writecommand(0x36); _tft.writedata(0x48);   // MADCTL (overridden by setRotation below)
+    _tft.writecommand(0x3A); _tft.writedata(0x55);   // COLMOD: 16-bit colour
+    _tft.writecommand(0xB4); _tft.writedata(0x01);   // column inversion: 1-dot
+    _tft.writecommand(0xB6);                           // display function control
+        _tft.writedata(0x80); _tft.writedata(0x02); _tft.writedata(0x3B);
+    _tft.writecommand(0xE8);                           // output ctrl adjust
+        _tft.writedata(0x40); _tft.writedata(0x8A); _tft.writedata(0x00); _tft.writedata(0x00);
+        _tft.writedata(0x29); _tft.writedata(0x19); _tft.writedata(0xA5); _tft.writedata(0x33);
+    _tft.writecommand(0xC1); _tft.writedata(0x06);   // power control 2
+    _tft.writecommand(0xC2); _tft.writedata(0xA7);   // power control 3
+    _tft.writecommand(0xC5); _tft.writedata(0x18);   // VCOM = 0.9 V
+    _tft.writecommand(0xE0);                           // gamma positive
+        _tft.writedata(0xF0); _tft.writedata(0x09); _tft.writedata(0x0b); _tft.writedata(0x06);
+        _tft.writedata(0x04); _tft.writedata(0x15); _tft.writedata(0x2F); _tft.writedata(0x54);
+        _tft.writedata(0x42); _tft.writedata(0x3C); _tft.writedata(0x17); _tft.writedata(0x14);
+        _tft.writedata(0x18); _tft.writedata(0x1B);
+    _tft.writecommand(0xE1);                           // gamma negative
+        _tft.writedata(0xE0); _tft.writedata(0x09); _tft.writedata(0x0B); _tft.writedata(0x06);
+        _tft.writedata(0x04); _tft.writedata(0x03); _tft.writedata(0x2B); _tft.writedata(0x43);
+        _tft.writedata(0x42); _tft.writedata(0x3B); _tft.writedata(0x16); _tft.writedata(0x14);
+        _tft.writedata(0x17); _tft.writedata(0x1B);
+    _tft.writecommand(0xF0); _tft.writedata(0x3C);   // disable extension cmd set 2 part I
+    _tft.writecommand(0xF0); _tft.writedata(0x69);   // disable extension cmd set 2 part II
+
+    _tft.writecommand(0x29);   // DISPON
+    _tft.setRotation(1);       // restore MADCTL for our rotation
+    _tft.fillScreen(TFT_BLACK);
 }
 
 void Display::fadeInBacklight() {
