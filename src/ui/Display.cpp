@@ -1,5 +1,8 @@
 #include "Display.h"
 #include "../config.h"
+#if DISPLAY_480
+#include "fn_icons.h"
+#endif
 
 #if DISPLAY_480
 #  include "splash_480.h"
@@ -512,19 +515,9 @@ void Display::drawFnIcon(const char *name, int fnNum,
         _tft.fillRect(cx - 13, cy - 3, 6, 6, color);
         _tft.fillTriangle(cx - 7, cy - 10, cx - 7, cy + 10, cx + 10, cy, color);
     } else if (has("high") || has("full beam") || has("highbeam")) {
-        // car-light-high (MDI): lens ring + 3 horizontal beams
-        _tft.fillCircle(cx + 4, cy, 7, color);
-        _tft.fillCircle(cx + 4, cy, 4, bg);
-        _tft.fillRect(cx - 11, cy - 6, 8, 3, color);
-        _tft.fillRect(cx - 11, cy - 1, 8, 3, color);
-        _tft.fillRect(cx - 11, cy + 4, 8, 3, color);
+        _tft.drawBitmap(cx - 12, cy - 12, icon_car_light_high, 24, 24, color);
     } else if (has("light") || has("head") || has("ditch") || has("beam") || has("marker")) {
-        // car-light-dimmed (MDI): lens ring + 3 angled beams
-        _tft.fillCircle(cx + 4, cy, 7, color);
-        _tft.fillCircle(cx + 4, cy, 4, bg);
-        _tft.drawWideLine(cx - 2, cy - 5, cx - 11, cy - 3, 2, color, color);
-        _tft.drawWideLine(cx - 2, cy,     cx - 11, cy + 1, 2, color, color);
-        _tft.drawWideLine(cx - 2, cy + 5, cx - 11, cy + 6, 2, color, color);
+        _tft.drawBitmap(cx - 12, cy - 12, icon_car_light_dimmed, 24, 24, color);
     } else if (has("mute") || has("silent") || has("quiet")) {
         // Muted speaker: body + X cross
         _tft.fillRect(cx - 13, cy - 3, 5, 6, color);
