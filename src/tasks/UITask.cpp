@@ -7,11 +7,13 @@
 #include <Preferences.h>
 #endif
 
-extern RosterEntry       rosterEntries[MAX_ROSTER_SIZE];
-extern int               rosterCount;
-extern SemaphoreHandle_t rosterMutex;
+extern RosterEntry        rosterEntries[MAX_ROSTER_SIZE];
+extern int                rosterCount;
+extern SemaphoreHandle_t  rosterMutex;
+extern LocoFunctionData   locoFuncData[NUM_THROTTLES];
+extern SemaphoreHandle_t  functionMutex;
 
-enum class Screen { THROTTLE, ROSTER };
+enum class Screen { THROTTLE, ROSTER, FUNCTION };
 
 static void uiTask(void *param) {
     auto *queues = reinterpret_cast<QueueHandle_t *>(param);
@@ -78,7 +80,8 @@ static void uiTask(void *param) {
     bool     trackPower        = false;
     bool     rosterReady       = false;
     int      rosterScroll      = 0;
-    int      selectedThrottle  = 0;   // which slot opened the roster
+    int      selectedThrottle  = 0;   // which slot opened the roster or function screen
+    int      fnScroll          = 0;   // function screen row scroll offset
     int      currentMa         = -1;
     bool     displaySleeping   = false;
     uint32_t lastActivityMs    = millis();
@@ -88,17 +91,36 @@ static void uiTask(void *param) {
 #endif
     bool estopBtnPrev = HIGH;
 
-    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa, locoName);
+    // Full throttle screen redraw including mini function strip (under functionMutex).
+    auto drawThrottle = [&]() {
+        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa, locoName);
+#if DISPLAY_480
+        if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            for (int i = 0; i < NUM_THROTTLES; i++)
+                display.drawMiniFunctions(i, locoFuncData[i]);
+            xSemaphoreGive(functionMutex);
+        }
+#endif
+    };
+
+    drawThrottle();
 
     // Redraw whichever screen is active (called after waking)
     auto redrawActive = [&]() {
         if (activeScreen == Screen::THROTTLE) {
-            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected, trackPower, currentMa, locoName);
-        } else {
+            drawThrottle();
+        } else if (activeScreen == Screen::ROSTER) {
             if (xSemaphoreTake(rosterMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                 display.drawRosterScreen(rosterEntries, rosterCount, rosterScroll,
                                          locoState[selectedThrottle].address, rosterReady);
                 xSemaphoreGive(rosterMutex);
+            }
+        } else if (activeScreen == Screen::FUNCTION) {
+            if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                display.drawFunctionScreen(selectedThrottle, locoState[selectedThrottle],
+                                           locoName[selectedThrottle],
+                                           locoFuncData[selectedThrottle], fnScroll);
+                xSemaphoreGive(functionMutex);
             }
         }
     };
@@ -200,6 +222,31 @@ static void uiTask(void *param) {
                     }
                     break;
 
+                case DCCEventType::FUNCTION_UPDATE:
+                    if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+                        for (int i = 0; i < NUM_THROTTLES; i++) {
+                            if (locoState[i].address == evt.loco.address) {
+                                int32_t oldStates = locoFuncData[i].states;
+                                locoFuncData[i].states = (int32_t)evt.value;
+                                if (!displaySleeping) {
+                                    int32_t changed = oldStates ^ locoFuncData[i].states;
+                                    if (activeScreen == Screen::FUNCTION && i == selectedThrottle) {
+                                        for (int f = 0; f < MAX_LOCO_FUNCTIONS; f++)
+                                            if ((changed >> f) & 1)
+                                                display.drawFnButton(f, locoFuncData[i], fnScroll);
+                                    } else if (activeScreen == Screen::THROTTLE) {
+                                        for (int b = 0; b < Display::MINI_BTN_COUNT; b++)
+                                            if ((changed >> b) & 1)
+                                                display.drawMiniFnButton(i, b, locoFuncData[i]);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        xSemaphoreGive(functionMutex);
+                    }
+                    break;
+
                 case DCCEventType::LOCO_UPDATE:
                     connected  = true;   // infer from live updates
                     trackPower = true;   // updates only arrive when power is on
@@ -244,7 +291,20 @@ static void uiTask(void *param) {
                                 xSemaphoreGive(rosterMutex);
                             }
                         }
-                    } else {
+                    } else if (activeScreen == Screen::FUNCTION && i == 0) {
+                        static constexpr int FN_MAX_SCROLL =
+                            MAX_LOCO_FUNCTIONS / Display::FN_COLS - Display::FN_ROWS;
+                        int newScroll = constrain(fnScroll + delta, 0, FN_MAX_SCROLL);
+                        if (newScroll != fnScroll) {
+                            fnScroll = newScroll;
+                            if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                display.drawFunctionScreen(selectedThrottle,
+                                    locoState[selectedThrottle], locoName[selectedThrottle],
+                                    locoFuncData[selectedThrottle], fnScroll);
+                                xSemaphoreGive(functionMutex);
+                            }
+                        }
+                    } else if (activeScreen == Screen::THROTTLE) {
                         uint32_t now     = millis();
                         uint32_t elapsed = now - lastEncMs[i];
                         lastEncMs[i]     = now;
@@ -253,9 +313,8 @@ static void uiTask(void *param) {
                         if (newSpeed != locoState[i].speed) {
                             locoState[i].speed = newSpeed;
                             lastLocalInputMs[i] = millis();
-                            if (activeScreen == Screen::THROTTLE)
-                                display.drawThrottleSpeed(i, locoState[i]);
-                            UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
+                            display.drawThrottleSpeed(i, locoState[i]);
+                            UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, 0, locoState[i] };
                             xQueueSend(cmdQueue, &cmd, 0);
                         }
                     }
@@ -267,7 +326,7 @@ static void uiTask(void *param) {
                         locoState[i].speed   = 0;
                         lastLocalInputMs[i]  = millis();
                         display.drawThrottleSpeed(i, locoState[i]);
-                        UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, locoState[i] };
+                        UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)i, 0, locoState[i] };
                         xQueueSend(cmdQueue, &cmd, 0);
                     }
                 }
@@ -275,29 +334,55 @@ static void uiTask(void *param) {
         }
 
         // --- Touch input (ST7796 only) ---
-        // Tap throttle screen → toggle direction for tapped column
-        // Tap roster screen  → scroll up (upper half) or down (lower half)
-        // Touch input (ST7796 only)
-        // - Top bar (ty < TOP_BAR_H): power / stop buttons
-        // - Sub-header (TOP_BAR_H ≤ ty < HDR_H): tap throttle column → open roster for that slot;
-        //   tap while on roster → go back to throttle
-        // - Body on throttle screen: tap column → toggle direction
-        // - Body on roster screen: tap top/bottom half → scroll up/down
-        // - Any tap while sleeping → wake only, no action
+        // Touch zones:
+        //   ty < HDR_H         : header (PWR/STOP buttons or back-nav for roster/function)
+        //   ty >= HDR_H        : body (screen-specific behaviour)
+        //   ty >= FN_STRIP_Y   : Fn nav strip on throttle screen
+        // Momentary functions use press/release detection; everything else is a tap.
 #if DISPLAY_480
         {
-            static uint32_t lastTouchMs = 0;
-            uint16_t tx, ty;
-            if ((millis() - lastTouchMs) >= 280 && display.getTouch(tx, ty)) {
+            static uint32_t lastTouchMs  = 0;
+            static bool     prevTouched  = false;
+            static int      heldFnNum    = -1;  // momentary fn number held (-1 = none)
+            static int      heldSlot     = -1;  // throttle slot for held fn
+            static int      heldBtnIdx   = -1;  // mini strip btnIdx, or -1 if function screen
+            uint16_t tx = 0, ty = 0;
+            bool touched = display.getTouch(tx, ty);
+
+            // Release detection for momentary functions
+            if (prevTouched && !touched && heldFnNum >= 0) {
+                if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+                    locoFuncData[heldSlot].states &= ~(1L << heldFnNum);
+                    if (heldBtnIdx >= 0)
+                        display.drawMiniFnButton(heldSlot, heldBtnIdx, locoFuncData[heldSlot]);
+                    else
+                        display.drawFnButton(heldFnNum, locoFuncData[heldSlot], fnScroll);
+                    xSemaphoreGive(functionMutex);
+                }
+                UICmd cmd{};
+                cmd.type         = UICmdType::FUNCTION_CMD;
+                cmd.index        = (uint8_t)heldSlot;
+                cmd.func         = (uint8_t)heldFnNum;
+                cmd.loco.forward = false;
+                xQueueSend(cmdQueue, &cmd, 0);
+                heldFnNum  = -1;
+                heldSlot   = -1;
+                heldBtnIdx = -1;
+                lastTouchMs = millis();  // debounce after release
+            }
+            prevTouched = touched;
+
+            // Shorter debounce on function screen so quick momentary taps register
+            uint32_t debounce = (activeScreen == Screen::FUNCTION) ? 60u : 280u;
+            if (touched && heldFnNum < 0 && (millis() - lastTouchMs) >= debounce) {
                 lastTouchMs = millis();
                 bool wasSleeping = noteActivity();
                 if (!wasSleeping) {
                     if (ty < Display::HDR_H) {
-                        if (activeScreen == Screen::ROSTER) {
+                        if (activeScreen == Screen::ROSTER || activeScreen == Screen::FUNCTION) {
                             // Entire header → back to throttle
                             activeScreen = Screen::THROTTLE;
-                            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected,
-                                                       trackPower, currentMa, locoName);
+                            drawThrottle();
                         } else if (ty < Display::TOP_BAR_H) {
                             // Throttle screen: button row (PWR / STOP)
                             TopBarZone zone = display.hitTestTopBar(tx, ty);
@@ -328,13 +413,92 @@ static void uiTask(void *param) {
                             }
                         }
                     } else if (activeScreen == Screen::THROTTLE) {
-                        // Body: toggle direction for tapped column
-                        int col = tx / (SCREEN_W / NUM_THROTTLES);
-                        if (col >= 0 && col < NUM_THROTTLES) {
+                        int col = constrain((int)tx / (SCREEN_W / NUM_THROTTLES),
+                                            0, NUM_THROTTLES - 1);
+                        if ((int)ty >= Display::FN_STRIP_Y) {
+                            // Mini function strip tap
+                            int localX  = (int)tx - col * (SCREEN_W / NUM_THROTTLES);
+                            int btnIdx  = constrain(localX / Display::MINI_BTN_W,
+                                                    0, Display::MINI_BTN_COUNT);
+                            if (btnIdx == Display::MINI_BTN_COUNT) {
+                                // "+" button → open full function screen
+                                selectedThrottle = col;
+                                fnScroll = 0;
+                                activeScreen = Screen::FUNCTION;
+                                if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                    display.drawFunctionScreen(selectedThrottle,
+                                        locoState[selectedThrottle], locoName[selectedThrottle],
+                                        locoFuncData[selectedThrottle], fnScroll);
+                                    xSemaphoreGive(functionMutex);
+                                }
+                            } else {
+                                // F0/F1/F2 button tap: toggle or momentary press
+                                int fnNum    = btnIdx;
+                                bool newState = false;
+                                if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                    bool momentary = locoFuncData[col].defs[fnNum].momentary;
+                                    bool cur = (locoFuncData[col].states >> fnNum) & 1;
+                                    if (momentary) {
+                                        newState   = true;
+                                        heldFnNum  = fnNum;
+                                        heldSlot   = col;
+                                        heldBtnIdx = btnIdx;
+                                    } else {
+                                        newState = !cur;
+                                    }
+                                    if (newState)
+                                        locoFuncData[col].states |=  (1L << fnNum);
+                                    else
+                                        locoFuncData[col].states &= ~(1L << fnNum);
+                                    display.drawMiniFnButton(col, btnIdx, locoFuncData[col]);
+                                    xSemaphoreGive(functionMutex);
+                                }
+                                UICmd cmd{};
+                                cmd.type         = UICmdType::FUNCTION_CMD;
+                                cmd.index        = (uint8_t)col;
+                                cmd.func         = (uint8_t)fnNum;
+                                cmd.loco.forward = newState;
+                                xQueueSend(cmdQueue, &cmd, 0);
+                            }
+                        } else {
+                            // Gauge body: toggle direction for tapped column
                             locoState[col].forward = !locoState[col].forward;
                             locoState[col].speed   = 0;
                             display.drawThrottleSpeed(col, locoState[col]);
-                            UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, locoState[col] };
+                            UICmd cmd{ UICmdType::SET_THROTTLE, (uint8_t)col, 0, locoState[col] };
+                            xQueueSend(cmdQueue, &cmd, 0);
+                        }
+                    } else if (activeScreen == Screen::FUNCTION) {
+                        // Function button tap: hit-test grid
+                        int btnRow = ((int)ty - Display::HDR_H) / Display::FN_BTN_H;
+                        int btnCol = (int)tx / Display::FN_BTN_W;
+                        int fnNum  = (fnScroll + btnRow) * Display::FN_COLS + btnCol;
+                        if (fnNum >= 0 && fnNum < MAX_LOCO_FUNCTIONS) {
+                            bool newState  = false;
+                            if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                                bool momentary = locoFuncData[selectedThrottle].defs[fnNum].momentary;
+                                bool cur = (locoFuncData[selectedThrottle].states >> fnNum) & 1;
+                                if (momentary) {
+                                    newState   = true;
+                                    heldFnNum  = fnNum;
+                                    heldSlot   = selectedThrottle;
+                                    heldBtnIdx = -1;
+                                } else {
+                                    newState = !cur;        // latching toggle
+                                }
+                                if (newState)
+                                    locoFuncData[selectedThrottle].states |=  (1L << fnNum);
+                                else
+                                    locoFuncData[selectedThrottle].states &= ~(1L << fnNum);
+                                // Redraw only the tapped button — no full-screen clear
+                                display.drawFnButton(fnNum, locoFuncData[selectedThrottle], fnScroll);
+                                xSemaphoreGive(functionMutex);
+                            }
+                            UICmd cmd{};
+                            cmd.type         = UICmdType::FUNCTION_CMD;
+                            cmd.index        = (uint8_t)selectedThrottle;
+                            cmd.func         = (uint8_t)fnNum;
+                            cmd.loco.forward = newState;
                             xQueueSend(cmdQueue, &cmd, 0);
                         }
                     } else {
@@ -365,7 +529,7 @@ static void uiTask(void *param) {
 
                                 // Stop old loco before reassigning
                                 UICmd stopOld{ UICmdType::SET_THROTTLE,
-                                               (uint8_t)selectedThrottle, locoState[selectedThrottle] };
+                                               (uint8_t)selectedThrottle, 0, locoState[selectedThrottle] };
                                 stopOld.loco.speed = 0;
                                 xQueueSend(cmdQueue, &stopOld, 0);
 
@@ -374,13 +538,11 @@ static void uiTask(void *param) {
                                 locoState[selectedThrottle].forward = true;
 
                                 UICmd assignCmd{ UICmdType::ASSIGN_LOCO,
-                                                 (uint8_t)selectedThrottle, locoState[selectedThrottle] };
+                                                 (uint8_t)selectedThrottle, 0, locoState[selectedThrottle] };
                                 xQueueSend(cmdQueue, &assignCmd, 0);
                             }
                             activeScreen = Screen::THROTTLE;
-                            // Roster screen left background black — skip fill to avoid flash
-                            display.drawThrottleScreen(locoState, NUM_THROTTLES, connected,
-                                                       trackPower, currentMa, locoName);
+                            drawThrottle();
                         }
                     }
                 }
@@ -409,8 +571,7 @@ static void uiTask(void *param) {
                         }
                     } else {
                         activeScreen = Screen::THROTTLE;
-                        display.drawThrottleScreen(locoState, NUM_THROTTLES, connected,
-                                                   trackPower, currentMa, locoName);
+                        drawThrottle();
                     }
                 }
             }
@@ -430,8 +591,7 @@ static void uiTask(void *param) {
                 if (displaySleeping) {
                     displaySleeping = false;
                     display.wake();
-                    display.drawThrottleScreen(locoState, NUM_THROTTLES, connected,
-                                               trackPower, currentMa, locoName);
+                    drawThrottle();
                     display.fadeInBacklight();
                 } else if (activeScreen == Screen::THROTTLE) {
                     for (int i = 0; i < NUM_THROTTLES; i++)

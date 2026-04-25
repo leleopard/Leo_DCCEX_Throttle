@@ -22,6 +22,12 @@ static constexpr uint16_t COL_SELECTED = 0x1E3F;
 static constexpr uint16_t COL_NEEDLE   = TFT_RED;
 static constexpr uint16_t DIAL_BG      = TFT_WHITE;  // white dial face
 
+// Function button colours
+static constexpr uint16_t COL_FN_ACTIVE   = 0x03E0;  // TFT_DARKGREEN
+static constexpr uint16_t COL_FN_INACTIVE = 0x39C7;  // medium dark grey
+static constexpr uint16_t COL_FN_TXT_ON   = TFT_WHITE;
+static constexpr uint16_t COL_FN_TXT_OFF  = 0xC618;  // light grey
+
 // Chrome bezel layers
 static constexpr uint16_t CHR_DARK   = 0x2104;
 static constexpr uint16_t CHR_MED    = 0x738E;
@@ -87,6 +93,15 @@ static constexpr int STATUS_H     = 28;
 // Header rows: top bar holds buttons+mA, col sub-header holds addresses
 static constexpr int TOP_ROW_H  = 40;   // button/mA row height
 static constexpr int COL_HDR_H  = HDR_H - TOP_ROW_H;  // 36 — address sub-header
+
+// Function screen strip (gap below gauge face on throttle screen)
+static constexpr int FN_STRIP_Y = Display::FN_STRIP_Y;   // 278
+static constexpr int FN_STRIP_H = H - FN_STRIP_Y;        // 42
+static constexpr int FN_COLS    = Display::FN_COLS;       // 4
+static constexpr int FN_ROWS    = Display::FN_ROWS;       // 5
+static constexpr int FN_BTN_W   = Display::FN_BTN_W;     // 120
+static constexpr int FN_BTN_H   = Display::FN_BTN_H;     // 48
+static constexpr int FN_PAD     = 3;
 
 // Top bar layout: equal-width PWR button (left) | mA reading (centre) | STOP button (right)
 static constexpr int BTN_W      = 96;
@@ -357,6 +372,9 @@ void Display::drawThrottleScreen(const LocoState *locos, int count, bool connect
     drawColHeaders(connected, locos, count, names);
     for (int i = 1; i < NUM_THROTTLES; i++)
         _tft.drawFastVLine(i * COL_W, HDR_H, H - HDR_H, COL_DIVIDER);
+
+    // Mini function strip — caller (UITask) populates it via drawMiniFunctions()
+    // after this returns, under functionMutex.
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +384,7 @@ void Display::drawThrottleColumn(int col, const LocoState &loco, bool connected)
     _tft.fillRect(col * COL_W, HDR_H + 1, COL_W, H - HDR_H - 1, COL_BG);
     renderFaceToSprite(col, loco);
     pushFaceSprite(col);
+    // Mini function strip — caller populates it via drawMiniFunctions() under functionMutex.
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +474,249 @@ void Display::drawRosterScreen(const RosterEntry *entries, int count, int scroll
     _tft.setTextDatum(TL_DATUM);
 }
 
+
+// ---------------------------------------------------------------------------
+// Function icon renderer (ST7796 only)
+// Draws a geometric icon at (cx, cy) to represent the given function.
+// Matches on case-insensitive substrings of the function name; falls back to
+// "F#" text for unrecognised names.  All drawing goes directly to _tft.
+// ---------------------------------------------------------------------------
+#if DISPLAY_480
+void Display::drawFnIcon(const char *name, int fnNum,
+                          uint16_t color, uint16_t bg, int cx, int cy) {
+    char n[FUNC_NAME_LEN + 4] = {};
+    if (name)
+        for (int i = 0; name[i] && i < (int)sizeof(n) - 1; i++)
+            n[i] = (char)tolower((unsigned char)name[i]);
+
+    auto has = [&](const char *s) -> bool {
+        return n[0] && strstr(n, s) != nullptr;
+    };
+
+    if (has("light") || has("head") || has("ditch") || has("beam") || has("marker")) {
+        // Headlight / sun: filled circle + 8 rays
+        _tft.fillCircle(cx, cy, 6, color);
+        for (int a = 0; a < 360; a += 45) {
+            float r = a * DEG_TO_RAD;
+            _tft.drawLine(cx + (int)(9  * sinf(r)), cy - (int)(9  * cosf(r)),
+                          cx + (int)(13 * sinf(r)), cy - (int)(13 * cosf(r)), color);
+        }
+    } else if (has("bell")) {
+        // Bell: filled triangle body + rim bar + clapper dot
+        _tft.fillTriangle(cx, cy - 11, cx - 9, cy + 4, cx + 9, cy + 4, color);
+        _tft.fillRect(cx - 9, cy + 4, 18, 3, color);
+        _tft.fillCircle(cx, cy + 10, 3, color);
+    } else if (has("horn") || has("whistle") || has("bugle")) {
+        // Megaphone: small rect mouthpiece + expanding triangle bell
+        _tft.fillRect(cx - 13, cy - 3, 6, 6, color);
+        _tft.fillTriangle(cx - 7, cy - 10, cx - 7, cy + 10, cx + 10, cy, color);
+    } else if (has("mute") || has("silent") || has("quiet")) {
+        // Muted speaker: body + X cross
+        _tft.fillRect(cx - 13, cy - 3, 5, 6, color);
+        _tft.fillTriangle(cx - 8, cy - 7, cx - 8, cy + 7, cx + 1, cy, color);
+        _tft.drawWideLine(cx + 4, cy - 6, cx + 11, cy + 6, 2, color, color);
+        _tft.drawWideLine(cx + 4, cy + 6, cx + 11, cy - 6, 2, color, color);
+    } else if (has("sound") || has("audio") || has("volume") || has("exhaust")) {
+        // Speaker + arc (sound wave)
+        _tft.fillRect(cx - 11, cy - 3, 5, 6, color);
+        _tft.fillTriangle(cx - 6, cy - 7, cx - 6, cy + 7, cx + 3, cy, color);
+        // Right-side C arc (TFT convention: 0°=bottom, CW; 180°→360° = right half)
+        _tft.drawSmoothArc(cx + 8, cy, 7, 5, 180, 360, color, bg);
+    } else if (has("brake") || has("brk") || has("dyn")) {
+        // Brake disc: outer ring + centre hub
+        _tft.drawSmoothArc(cx, cy, 12, 9, 0, 360, color, bg);
+        _tft.fillCircle(cx, cy, 4, color);
+    } else if (has("coupl") || has("knuckle") || has("uncouple")) {
+        // Coupler: two interlocked D-shapes + top/bottom bars
+        // Left C (opens right): bottom→left→top  = 0°→180° CW
+        _tft.drawSmoothArc(cx - 5, cy, 7, 5, 0, 180, color, bg);
+        // Right C (opens left): top→right→bottom = 180°→360° CW
+        _tft.drawSmoothArc(cx + 5, cy, 7, 5, 180, 360, color, bg);
+        _tft.fillRect(cx - 5, cy - 7, 10, 2, color);
+        _tft.fillRect(cx - 5, cy + 5, 10, 2, color);
+    } else if (has("smoke") || has("steam") || has("vapor") || has("cloud")) {
+        // Three rising wavy lines
+        for (int i = -1; i <= 1; i++) {
+            int x = cx + i * 6;
+            _tft.drawLine(x,     cy + 7, x + 3,  cy + 1, color);
+            _tft.drawLine(x + 3, cy + 1, x,      cy - 5, color);
+            _tft.drawLine(x,     cy - 5, x + 3,  cy - 11, color);
+        }
+    } else if (has("fan") || has("blower") || has("cool")) {
+        // Fan: outer ring + cross blades + hub
+        _tft.drawSmoothArc(cx, cy, 12, 10, 0, 360, color, bg);
+        _tft.drawLine(cx - 9, cy, cx + 9, cy, color);
+        _tft.drawLine(cx, cy - 9, cx, cy + 9, color);
+        _tft.fillCircle(cx, cy, 3, color);
+    } else if (has("cab") || has("inter") || has("dim") || has("numb")) {
+        // Interior / cab light: smaller sun with 6 rays
+        _tft.fillCircle(cx, cy, 5, color);
+        for (int a = 0; a < 360; a += 60) {
+            float r = a * DEG_TO_RAD;
+            _tft.drawLine(cx + (int)(7  * sinf(r)), cy - (int)(7  * cosf(r)),
+                          cx + (int)(11 * sinf(r)), cy - (int)(11 * cosf(r)), color);
+        }
+    } else if (has("panto") || has("collect")) {
+        // Pantograph: diamond + overhead wire
+        _tft.drawLine(cx, cy - 11, cx - 9, cy, color);
+        _tft.drawLine(cx, cy - 11, cx + 9, cy, color);
+        _tft.drawLine(cx - 9, cy, cx, cy + 8, color);
+        _tft.drawLine(cx + 9, cy, cx, cy + 8, color);
+        _tft.drawFastHLine(cx - 13, cy - 13, 26, color);  // overhead wire
+    } else if (has("rev") || (has("back") && !has("light"))) {
+        // Reverse arrow
+        _tft.fillTriangle(cx - 12, cy, cx - 2, cy - 9, cx - 2, cy + 9, color);
+        _tft.fillRect(cx - 2, cy - 4, 12, 8, color);
+    } else if (has("fwd") || has("forward") || has("dir")) {
+        // Forward arrow
+        _tft.fillTriangle(cx + 12, cy, cx + 2, cy - 9, cx + 2, cy + 9, color);
+        _tft.fillRect(cx - 10, cy - 4, 12, 8, color);
+    } else {
+        // Default: "F#" text
+        _tft.setFreeFont(&FreeSans9pt7b);
+        _tft.setTextDatum(MC_DATUM);
+        _tft.setTextColor(color, bg);
+        char txt[6];
+        snprintf(txt, sizeof(txt), "F%d", fnNum);
+        _tft.drawString(txt, cx, cy);
+        _tft.setTextFont(1);
+        _tft.setTextDatum(TL_DATUM);
+    }
+}
+#endif
+
+// ---------------------------------------------------------------------------
+// Single-button redraw — no screen clear, no header touch.
+// Caller must hold functionMutex.  No-op if fnNum is not in the current window.
+// ---------------------------------------------------------------------------
+#if DISPLAY_480
+void Display::drawFnButton(int fnNum, const LocoFunctionData &funcData, int scroll) {
+    int gridRow = fnNum / FN_COLS - scroll;
+    int gridCol = fnNum % FN_COLS;
+    if (gridRow < 0 || gridRow >= FN_ROWS) return;
+
+    bool     active = funcData.valid && ((funcData.states >> fnNum) & 1);
+    uint16_t bgCol  = active ? COL_FN_ACTIVE : COL_FN_INACTIVE;
+    uint16_t txtCol = active ? COL_FN_TXT_ON : COL_FN_TXT_OFF;
+
+    int bx = gridCol * FN_BTN_W + FN_PAD;
+    int by = HDR_H + gridRow * FN_BTN_H + FN_PAD;
+    int bw = FN_BTN_W - 2 * FN_PAD;
+    int bh = FN_BTN_H - 2 * FN_PAD;
+
+    _tft.fillRoundRect(bx, by, bw, bh, 5, bgCol);
+    const char *iconName = (funcData.valid && funcData.defs[fnNum].name[0])
+                           ? funcData.defs[fnNum].name : nullptr;
+    drawFnIcon(iconName, fnNum, txtCol, bgCol, bx + bw / 2, by + bh / 2);
+    if (funcData.valid && funcData.defs[fnNum].momentary)
+        _tft.fillCircle(bx + bw - 5, by + 5, 3, COL_ACCENT);
+}
+#endif
+
+// ---------------------------------------------------------------------------
+// Function screen (ST7796 only)
+// Caller must hold functionMutex for the duration.
+// scroll: number of button rows scrolled (encoder-controlled).
+// ---------------------------------------------------------------------------
+#if DISPLAY_480
+void Display::drawFunctionScreen(int slot, const LocoState &loco,
+                                  const char *locoName,
+                                  const LocoFunctionData &funcData, int scroll) {
+    _tft.fillScreen(COL_BG);
+
+    // Header bar
+    _tft.fillRect(0, 0, W, HDR_H, COL_HEADER);
+
+    // Title: "Fn: <name> #addr" left-aligned
+    char title[52];
+    if (locoName && locoName[0])
+        snprintf(title, sizeof(title), "Fn: %s #%d", locoName, loco.address);
+    else
+        snprintf(title, sizeof(title), "Fn: #%d", loco.address);
+    _tft.setFreeFont(&FreeSansBold9pt7b);
+    _tft.setTextDatum(ML_DATUM);
+    _tft.setTextColor(COL_TEXT, COL_HEADER);
+    _tft.drawString(title, 14, HDR_H / 2);
+
+    // Throttle slot indicator just left of back arrow
+    char slotStr[4];
+    snprintf(slotStr, sizeof(slotStr), "T%d", slot + 1);
+    _tft.setTextColor(COL_ACCENT, COL_HEADER);
+    _tft.setTextDatum(MR_DATUM);
+    _tft.drawString(slotStr, W - 62, HDR_H / 2);
+
+    // Back arrow (left-pointing filled triangle)
+    {
+        int cx = W - 30, cy = HDR_H / 2, hw = 12, hv = 14;
+        _tft.fillTriangle(cx - hw, cy, cx + hw, cy - hv, cx + hw, cy + hv, COL_TEXT);
+    }
+    _tft.drawFastHLine(0, HDR_H, W, COL_DIVIDER);
+
+    // Button grid — delegate each button to drawFnButton to share drawing logic
+    for (int fn = scroll * FN_COLS;
+         fn < (scroll + FN_ROWS) * FN_COLS && fn < MAX_LOCO_FUNCTIONS; fn++) {
+        drawFnButton(fn, funcData, scroll);
+    }
+
+    // Scroll hint at bottom right if there are more functions
+    int totalFns = MAX_LOCO_FUNCTIONS;
+    int maxScroll = totalFns / FN_COLS - FN_ROWS;
+    if (maxScroll > 0) {
+        _tft.setFreeFont(&FreeSans9pt7b);
+        _tft.setTextDatum(BR_DATUM);
+        _tft.setTextColor(0x8410, COL_BG);
+        char hint[20];
+        snprintf(hint, sizeof(hint), "F%d–F%d  ↕",
+                 scroll * FN_COLS, (scroll + FN_ROWS) * FN_COLS - 1);
+        _tft.drawString(hint, W - 4, H - 2);
+    }
+
+    _tft.setTextFont(1);
+    _tft.setTextDatum(TL_DATUM);
+}
+#endif
+
+// ---------------------------------------------------------------------------
+// Mini function strip — 3 fn buttons (F0/F1/F2 by roster order) + "+" per column.
+// Caller must hold functionMutex.
+// ---------------------------------------------------------------------------
+#if DISPLAY_480
+static constexpr int MINI_BTN_W = Display::MINI_BTN_W;  // 60
+
+void Display::drawMiniFnButton(int col, int btnIdx, const LocoFunctionData &funcData) {
+    const int pad = 2;
+    int bx = col * COL_W + btnIdx * MINI_BTN_W + pad;
+    int by = FN_STRIP_Y + pad;
+    int bw = MINI_BTN_W - 2 * pad;
+    int bh = FN_STRIP_H - 2 * pad;
+
+    if (btnIdx == MINI_BTN_COUNT) {
+        _tft.fillRoundRect(bx, by, bw, bh, 4, COL_HEADER);
+        _tft.setFreeFont(&FreeSans9pt7b);
+        _tft.setTextDatum(MC_DATUM);
+        _tft.setTextColor(COL_TEXT, COL_HEADER);
+        _tft.drawString("+", bx + bw / 2, by + bh / 2);
+        _tft.setTextDatum(TL_DATUM);
+    } else {
+        int fnNum       = btnIdx;   // F0, F1, F2
+        bool active     = funcData.valid && ((funcData.states >> fnNum) & 1);
+        uint16_t bgCol  = active ? COL_FN_ACTIVE  : COL_FN_INACTIVE;
+        uint16_t txtCol = active ? COL_FN_TXT_ON  : COL_FN_TXT_OFF;
+        _tft.fillRoundRect(bx, by, bw, bh, 4, bgCol);
+        const char *iconName = (funcData.valid && funcData.defs[fnNum].name[0])
+                               ? funcData.defs[fnNum].name : nullptr;
+        drawFnIcon(iconName, fnNum, txtCol, bgCol, bx + bw / 2, by + bh / 2);
+        if (funcData.valid && funcData.defs[fnNum].momentary)
+            _tft.fillCircle(bx + bw - 4, by + 4, 3, COL_ACCENT);
+    }
+}
+
+void Display::drawMiniFunctions(int col, const LocoFunctionData &funcData) {
+    _tft.drawFastHLine(col * COL_W, FN_STRIP_Y, COL_W, COL_DIVIDER);
+    for (int i = 0; i <= MINI_BTN_COUNT; i++)
+        drawMiniFnButton(col, i, funcData);
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Top bar hit test (ST7796 only)
