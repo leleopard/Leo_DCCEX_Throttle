@@ -493,13 +493,14 @@ void Display::drawFnIcon(const char *name, int fnNum,
         return n[0] && strstr(n, s) != nullptr;
     };
 
-    if (has("light") || has("head") || has("ditch") || has("beam") || has("marker")) {
-        // Headlight / sun: filled circle + 8 rays
-        _tft.fillCircle(cx, cy, 6, color);
-        for (int a = 0; a < 360; a += 45) {
+    // cab/inter checked first so "Cab Light" doesn't fall through to the headlight case
+    if (has("cab") || has("inter") || has("dim") || has("numb")) {
+        // Interior / cab light: smaller sun with 6 rays
+        _tft.fillCircle(cx, cy, 5, color);
+        for (int a = 0; a < 360; a += 60) {
             float r = a * DEG_TO_RAD;
-            _tft.drawLine(cx + (int)(9  * sinf(r)), cy - (int)(9  * cosf(r)),
-                          cx + (int)(13 * sinf(r)), cy - (int)(13 * cosf(r)), color);
+            _tft.drawLine(cx + (int)(7  * sinf(r)), cy - (int)(7  * cosf(r)),
+                          cx + (int)(11 * sinf(r)), cy - (int)(11 * cosf(r)), color);
         }
     } else if (has("bell")) {
         // Bell: filled triangle body + rim bar + clapper dot
@@ -507,9 +508,23 @@ void Display::drawFnIcon(const char *name, int fnNum,
         _tft.fillRect(cx - 9, cy + 4, 18, 3, color);
         _tft.fillCircle(cx, cy + 10, 3, color);
     } else if (has("horn") || has("whistle") || has("bugle")) {
-        // Megaphone: small rect mouthpiece + expanding triangle bell
+        // horn checked before "high" so "High Horn" shows a horn, not a headlight
         _tft.fillRect(cx - 13, cy - 3, 6, 6, color);
         _tft.fillTriangle(cx - 7, cy - 10, cx - 7, cy + 10, cx + 10, cy, color);
+    } else if (has("high") || has("full beam") || has("highbeam")) {
+        // car-light-high (MDI): lens ring + 3 horizontal beams
+        _tft.fillCircle(cx + 4, cy, 7, color);
+        _tft.fillCircle(cx + 4, cy, 4, bg);
+        _tft.fillRect(cx - 11, cy - 6, 8, 3, color);
+        _tft.fillRect(cx - 11, cy - 1, 8, 3, color);
+        _tft.fillRect(cx - 11, cy + 4, 8, 3, color);
+    } else if (has("light") || has("head") || has("ditch") || has("beam") || has("marker")) {
+        // car-light-dimmed (MDI): lens ring + 3 angled beams
+        _tft.fillCircle(cx + 4, cy, 7, color);
+        _tft.fillCircle(cx + 4, cy, 4, bg);
+        _tft.drawWideLine(cx - 2, cy - 5, cx - 11, cy - 3, 2, color, color);
+        _tft.drawWideLine(cx - 2, cy,     cx - 11, cy + 1, 2, color, color);
+        _tft.drawWideLine(cx - 2, cy + 5, cx - 11, cy + 6, 2, color, color);
     } else if (has("mute") || has("silent") || has("quiet")) {
         // Muted speaker: body + X cross
         _tft.fillRect(cx - 13, cy - 3, 5, 6, color);
@@ -520,7 +535,6 @@ void Display::drawFnIcon(const char *name, int fnNum,
         // Speaker + arc (sound wave)
         _tft.fillRect(cx - 11, cy - 3, 5, 6, color);
         _tft.fillTriangle(cx - 6, cy - 7, cx - 6, cy + 7, cx + 3, cy, color);
-        // Right-side C arc (TFT convention: 0°=bottom, CW; 180°→360° = right half)
         _tft.drawSmoothArc(cx + 8, cy, 7, 5, 180, 360, color, bg);
     } else if (has("brake") || has("brk") || has("dyn")) {
         // Brake disc: outer ring + centre hub
@@ -528,9 +542,7 @@ void Display::drawFnIcon(const char *name, int fnNum,
         _tft.fillCircle(cx, cy, 4, color);
     } else if (has("coupl") || has("knuckle") || has("uncouple")) {
         // Coupler: two interlocked D-shapes + top/bottom bars
-        // Left C (opens right): bottom→left→top  = 0°→180° CW
         _tft.drawSmoothArc(cx - 5, cy, 7, 5, 0, 180, color, bg);
-        // Right C (opens left): top→right→bottom = 180°→360° CW
         _tft.drawSmoothArc(cx + 5, cy, 7, 5, 180, 360, color, bg);
         _tft.fillRect(cx - 5, cy - 7, 10, 2, color);
         _tft.fillRect(cx - 5, cy + 5, 10, 2, color);
@@ -548,21 +560,13 @@ void Display::drawFnIcon(const char *name, int fnNum,
         _tft.drawLine(cx - 9, cy, cx + 9, cy, color);
         _tft.drawLine(cx, cy - 9, cx, cy + 9, color);
         _tft.fillCircle(cx, cy, 3, color);
-    } else if (has("cab") || has("inter") || has("dim") || has("numb")) {
-        // Interior / cab light: smaller sun with 6 rays
-        _tft.fillCircle(cx, cy, 5, color);
-        for (int a = 0; a < 360; a += 60) {
-            float r = a * DEG_TO_RAD;
-            _tft.drawLine(cx + (int)(7  * sinf(r)), cy - (int)(7  * cosf(r)),
-                          cx + (int)(11 * sinf(r)), cy - (int)(11 * cosf(r)), color);
-        }
     } else if (has("panto") || has("collect")) {
         // Pantograph: diamond + overhead wire
         _tft.drawLine(cx, cy - 11, cx - 9, cy, color);
         _tft.drawLine(cx, cy - 11, cx + 9, cy, color);
         _tft.drawLine(cx - 9, cy, cx, cy + 8, color);
         _tft.drawLine(cx + 9, cy, cx, cy + 8, color);
-        _tft.drawFastHLine(cx - 13, cy - 13, 26, color);  // overhead wire
+        _tft.drawFastHLine(cx - 13, cy - 13, 26, color);
     } else if (has("rev") || (has("back") && !has("light"))) {
         // Reverse arrow
         _tft.fillTriangle(cx - 12, cy, cx - 2, cy - 9, cx - 2, cy + 9, color);
