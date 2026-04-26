@@ -680,6 +680,18 @@ void Display::drawFunctionScreen(int slot, const LocoState &loco,
 #if DISPLAY_480
 static constexpr int MINI_BTN_W = Display::MINI_BTN_W;  // 60
 
+int Display::miniFnNum(const LocoFunctionData &funcData, int btnIdx) {
+    if (!funcData.valid) return btnIdx;
+    int count = 0;
+    for (int f = 0; f < MAX_LOCO_FUNCTIONS; f++) {
+        if (funcData.defs[f].name[0] != '\0') {
+            if (count == btnIdx) return f;
+            count++;
+        }
+    }
+    return -1;
+}
+
 void Display::drawMiniFnButton(int col, int btnIdx, const LocoFunctionData &funcData) {
     const int pad = 2;
     int bx = col * COL_W + btnIdx * MINI_BTN_W + pad;
@@ -695,7 +707,11 @@ void Display::drawMiniFnButton(int col, int btnIdx, const LocoFunctionData &func
         _tft.drawString("+", bx + bw / 2, by + bh / 2);
         _tft.setTextDatum(TL_DATUM);
     } else {
-        int fnNum       = btnIdx;   // F0, F1, F2
+        int fnNum = miniFnNum(funcData, btnIdx);
+        if (fnNum < 0) {
+            _tft.fillRoundRect(bx, by, bw, bh, 4, COL_FN_INACTIVE);
+            return;
+        }
         bool active     = funcData.valid && ((funcData.states >> fnNum) & 1);
         uint16_t bgCol  = active ? COL_FN_ACTIVE  : COL_FN_INACTIVE;
         uint16_t txtCol = active ? COL_FN_TXT_ON  : COL_FN_TXT_OFF;

@@ -57,6 +57,10 @@ public:
     // drawMiniFnButton redraws a single slot (btnIdx 0-2 = fn, 3 = '+').
     void drawMiniFunctions(int col, const LocoFunctionData &funcData);
     void drawMiniFnButton(int col, int btnIdx, const LocoFunctionData &funcData);
+    // Returns the function number of the btnIdx-th defined function (non-empty name).
+    // Falls back to btnIdx when data is not yet valid.  Returns -1 if fewer than
+    // btnIdx+1 functions are defined.
+    static int miniFnNum(const LocoFunctionData &funcData, int btnIdx);
 #endif
 
 #if DISPLAY_480

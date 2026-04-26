@@ -235,9 +235,11 @@ static void uiTask(void *param) {
                                             if ((changed >> f) & 1)
                                                 display.drawFnButton(f, locoFuncData[i], fnScroll);
                                     } else if (activeScreen == Screen::THROTTLE) {
-                                        for (int b = 0; b < Display::MINI_BTN_COUNT; b++)
-                                            if ((changed >> b) & 1)
+                                        for (int b = 0; b < Display::MINI_BTN_COUNT; b++) {
+                                            int fn = Display::miniFnNum(locoFuncData[i], b);
+                                            if (fn >= 0 && ((changed >> fn) & 1))
                                                 display.drawMiniFnButton(i, b, locoFuncData[i]);
+                                        }
                                     }
                                 }
                                 break;
@@ -432,33 +434,38 @@ static void uiTask(void *param) {
                                     xSemaphoreGive(functionMutex);
                                 }
                             } else {
-                                // F0/F1/F2 button tap: toggle or momentary press
-                                int fnNum    = btnIdx;
+                                // Tap one of the first 3 defined functions for this loco
+                                int  fnNum    = -1;
                                 bool newState = false;
                                 if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-                                    bool momentary = locoFuncData[col].defs[fnNum].momentary;
-                                    bool cur = (locoFuncData[col].states >> fnNum) & 1;
-                                    if (momentary) {
-                                        newState   = true;
-                                        heldFnNum  = fnNum;
-                                        heldSlot   = col;
-                                        heldBtnIdx = btnIdx;
-                                    } else {
-                                        newState = !cur;
+                                    fnNum = Display::miniFnNum(locoFuncData[col], btnIdx);
+                                    if (fnNum >= 0) {
+                                        bool momentary = locoFuncData[col].defs[fnNum].momentary;
+                                        bool cur = (locoFuncData[col].states >> fnNum) & 1;
+                                        if (momentary) {
+                                            newState   = true;
+                                            heldFnNum  = fnNum;
+                                            heldSlot   = col;
+                                            heldBtnIdx = btnIdx;
+                                        } else {
+                                            newState = !cur;
+                                        }
+                                        if (newState)
+                                            locoFuncData[col].states |=  (1L << fnNum);
+                                        else
+                                            locoFuncData[col].states &= ~(1L << fnNum);
+                                        display.drawMiniFnButton(col, btnIdx, locoFuncData[col]);
                                     }
-                                    if (newState)
-                                        locoFuncData[col].states |=  (1L << fnNum);
-                                    else
-                                        locoFuncData[col].states &= ~(1L << fnNum);
-                                    display.drawMiniFnButton(col, btnIdx, locoFuncData[col]);
                                     xSemaphoreGive(functionMutex);
                                 }
-                                UICmd cmd{};
-                                cmd.type         = UICmdType::FUNCTION_CMD;
-                                cmd.index        = (uint8_t)col;
-                                cmd.func         = (uint8_t)fnNum;
-                                cmd.loco.forward = newState;
-                                xQueueSend(cmdQueue, &cmd, 0);
+                                if (fnNum >= 0) {
+                                    UICmd cmd{};
+                                    cmd.type         = UICmdType::FUNCTION_CMD;
+                                    cmd.index        = (uint8_t)col;
+                                    cmd.func         = (uint8_t)fnNum;
+                                    cmd.loco.forward = newState;
+                                    xQueueSend(cmdQueue, &cmd, 0);
+                                }
                             }
                         } else {
                             // Gauge body: toggle direction for tapped column
@@ -527,15 +534,13 @@ static void uiTask(void *param) {
                                 }
 #endif
 
-                                // Stop old loco before reassigning
-                                UICmd stopOld{ UICmdType::SET_THROTTLE,
-                                               (uint8_t)selectedThrottle, 0, locoState[selectedThrottle] };
-                                stopOld.loco.speed = 0;
-                                xQueueSend(cmdQueue, &stopOld, 0);
-
+                                // Assign new loco — old loco keeps running at its current speed.
+                                // Reset suppression window so the first LOCO_UPDATE echo from
+                                // the CS is accepted immediately and shows the loco's live state.
                                 locoState[selectedThrottle].address = newAddr;
                                 locoState[selectedThrottle].speed   = 0;
                                 locoState[selectedThrottle].forward = true;
+                                lastLocalInputMs[selectedThrottle]  = 0;
 
                                 UICmd assignCmd{ UICmdType::ASSIGN_LOCO,
                                                  (uint8_t)selectedThrottle, 0, locoState[selectedThrottle] };
