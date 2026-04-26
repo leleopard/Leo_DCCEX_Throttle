@@ -68,27 +68,27 @@ static constexpr uint32_t TFT_ARC_START = (GAUGE_START + 180) % 360;            
 static constexpr uint32_t TFT_ARC_END   = (GAUGE_START + GAUGE_SWEEP + 180) % 360; // 320
 
 #if DISPLAY_480
-static constexpr int GAUGE_R     = 85;
+static constexpr int GAUGE_R     = 92;
 static constexpr int BEZEL_W     = 7;
-static constexpr int GAUGE_THICK = 17;
+static constexpr int GAUGE_THICK = 18;
 static constexpr int GAUGE_CY    = 177;
 
-static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 78
-static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 61
+static constexpr int ARC_R       = GAUGE_R - BEZEL_W;       // 85
+static constexpr int ARC_IR      = ARC_R - GAUGE_THICK;     // 67
 
-static constexpr int SPRITE_R    = GAUGE_R + 1;              // 86 — full bezel in sprite
+static constexpr int SPRITE_R    = GAUGE_R + 1;              // 93 — full bezel in sprite
 
-static constexpr int NEEDLE_R    = 66;
-static constexpr int NEEDLE_W    = 3;
-static constexpr int HUB_R       = 8;
+static constexpr int NEEDLE_R    = 72;
+static constexpr int NEEDLE_W    = 4;
+static constexpr int HUB_R       = 9;
 
-static constexpr int TICK_OUTER  = ARC_IR - 1;              // 60
-static constexpr int TICK_MAJ_IN = ARC_IR - 14;             // 47
-static constexpr int TICK_MIN_IN = ARC_IR - 8;              // 53
-static constexpr int DIR_INNER_Y = 25;   // FWD/REV offset below sprite centre
-static constexpr int SPD_INNER_Y = 55;   // speed number offset below sprite centre
-static constexpr int SPD_BOX_W   = 62;
-static constexpr int SPD_BOX_H   = 30;
+static constexpr int TICK_OUTER  = ARC_IR - 1;              // 66
+static constexpr int TICK_MAJ_IN = ARC_IR - 15;             // 52
+static constexpr int TICK_MIN_IN = ARC_IR - 8;              // 59
+static constexpr int DIR_INNER_Y = 27;   // FWD/REV offset below sprite centre
+static constexpr int SPD_INNER_Y = 59;   // speed number offset below sprite centre
+static constexpr int SPD_BOX_W   = 66;
+static constexpr int SPD_BOX_H   = 32;
 
 static constexpr int ROSTER_ROW_H = 36;
 static constexpr int STATUS_H     = 28;
