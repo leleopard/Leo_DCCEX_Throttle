@@ -10,11 +10,33 @@ RosterEntry      rosterEntries[MAX_ROSTER_SIZE];
 int              rosterCount = 0;
 SemaphoreHandle_t rosterMutex;
 
+LocoFunctionData  locoFuncData[NUM_THROTTLES];
+SemaphoreHandle_t functionMutex;
+
 static const int LOCO_ADDRESSES[NUM_THROTTLES] = {
     LOCO_ADDR_0, LOCO_ADDR_1
 };
 
 static Loco *activeLoco[NUM_THROTTLES] = {};
+
+static void populateFunctionData(int slot) {
+    LocoFunctionData &fd = locoFuncData[slot];
+    fd.states = 0; fd.valid = false;
+    if (!activeLoco[slot]) return;
+    fd.states = activeLoco[slot]->getFunctionStates();
+    fd.valid  = true;
+    for (int f = 0; f < MAX_LOCO_FUNCTIONS; f++) {
+        const char *n = activeLoco[slot]->getFunctionName(f);
+        if (n && n[0]) {
+            strncpy(fd.defs[f].name, n, FUNC_NAME_LEN - 1);
+            fd.defs[f].name[FUNC_NAME_LEN - 1] = '\0';
+            fd.defs[f].momentary = activeLoco[slot]->isFunctionMomentary(f);
+        } else {
+            fd.defs[f].name[0]   = '\0';
+            fd.defs[f].momentary = false;
+        }
+    }
+}
 
 static void applyThrottle(int index, const LocoState &s) {
     if (!activeLoco[index]) return;
@@ -27,7 +49,8 @@ static void dccTask(void *param) {
     QueueHandle_t eventQueue = queues[0];
     QueueHandle_t cmdQueue   = queues[1];
 
-    rosterMutex = xSemaphoreCreateMutex();
+    rosterMutex   = xSemaphoreCreateMutex();
+    functionMutex = xSemaphoreCreateMutex();
 
     DCCEX_SERIAL.begin(DCCEX_BAUD, SERIAL_8N1, DCCEX_RX_PIN, DCCEX_TX_PIN);
     delay(500);
@@ -89,19 +112,18 @@ static void dccTask(void *param) {
         if (!rosterReadyFired && dccexProtocol.receivedRoster()) {
             rosterReadyFired = true;
             Serial.printf("[DCC] Roster flag set by library (count via delegate: %d)\n", rosterCount);
+            // Replace pre-created LocoSourceEntry objects with roster-derived Loco* so
+            // that function names and momentary flags are available.
+            if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                for (int i = 0; i < NUM_THROTTLES; i++) {
+                    Loco *found = dccexProtocol.findLocoInRoster(LOCO_ADDRESSES[i]);
+                    if (found) activeLoco[i] = found;
+                    populateFunctionData(i);
+                }
+                xSemaphoreGive(functionMutex);
+            }
             DCCEvent evt{ DCCEventType::ROSTER_READY, {}, 0 };
             xQueueSend(eventQueue, &evt, 0);
-        }
-
-        // Resolve active locos after roster arrives
-        if (dccexProtocol.receivedRoster()) {
-            for (int i = 0; i < NUM_THROTTLES; i++) {
-                if (!activeLoco[i]) {
-                    activeLoco[i] = dccexProtocol.findLocoInRoster(LOCO_ADDRESSES[i]);
-                    if (!activeLoco[i])
-                        activeLoco[i] = new Loco(LOCO_ADDRESSES[i], LocoSource::LocoSourceEntry);
-                }
-            }
         }
 
         while (xQueueReceive(cmdQueue, &cmd, 0) == pdTRUE) {
@@ -122,11 +144,30 @@ static void dccTask(void *param) {
                 case UICmdType::POWER_OFF:
                     dccexProtocol.powerOff();
                     break;
-                case UICmdType::ASSIGN_LOCO:
-                    activeLoco[cmd.index] = dccexProtocol.findLocoInRoster(cmd.loco.address);
-                    if (!activeLoco[cmd.index])
-                        activeLoco[cmd.index] = new Loco(cmd.loco.address, LocoSource::LocoSourceEntry);
+                case UICmdType::ASSIGN_LOCO: {
+                    Loco *found = dccexProtocol.findLocoInRoster(cmd.loco.address);
+                    activeLoco[cmd.index] = found
+                        ? found
+                        : new Loco(cmd.loco.address, LocoSource::LocoSourceEntry);
                     Serial.printf("[DCC] Throttle %d → addr %d\n", cmd.index, cmd.loco.address);
+                    if (xSemaphoreTake(functionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                        populateFunctionData(cmd.index);
+                        xSemaphoreGive(functionMutex);
+                    }
+                    DCCEvent fEvt{};
+                    fEvt.type         = DCCEventType::FUNCTION_UPDATE;
+                    fEvt.loco.address = cmd.loco.address;
+                    fEvt.value        = (int)locoFuncData[cmd.index].states;
+                    xQueueSend(eventQueue, &fEvt, 0);
+                    break;
+                }
+                case UICmdType::FUNCTION_CMD:
+                    if (activeLoco[cmd.index]) {
+                        if (cmd.loco.forward)
+                            dccexProtocol.functionOn(activeLoco[cmd.index], cmd.func);
+                        else
+                            dccexProtocol.functionOff(activeLoco[cmd.index], cmd.func);
+                    }
                     break;
             }
         }

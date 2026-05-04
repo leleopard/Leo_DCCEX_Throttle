@@ -50,16 +50,28 @@ void DCCDelegate::receivedLocoUpdate(Loco *loco) {
     evt.loco.speed   = loco->getSpeed();
     evt.loco.forward = (loco->getDirection() == Direction::Forward);
     postEvent(evt);
+
+    DCCEvent fEvt{};
+    fEvt.type         = DCCEventType::FUNCTION_UPDATE;
+    fEvt.loco.address = loco->getAddress();
+    fEvt.value        = (int)loco->getFunctionStates();
+    postEvent(fEvt);
 }
 
 void DCCDelegate::receivedLocoBroadcast(int address, int speed,
-                                        Direction direction, int /*functionMap*/) {
+                                        Direction direction, int functionMap) {
     DCCEvent evt{};
     evt.type         = DCCEventType::LOCO_UPDATE;
     evt.loco.address = address;
     evt.loco.speed   = speed;
     evt.loco.forward = (direction == Direction::Forward);
     postEvent(evt);
+
+    DCCEvent fEvt{};
+    fEvt.type         = DCCEventType::FUNCTION_UPDATE;
+    fEvt.loco.address = address;
+    fEvt.value        = functionMap;
+    postEvent(fEvt);
 }
 
 void DCCDelegate::receivedTrackPower(TrackPower state) {

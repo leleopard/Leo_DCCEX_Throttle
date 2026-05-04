@@ -21,6 +21,24 @@ struct RosterEntry {
 };
 
 // ---------------------------------------------------------------------------
+// Function data — populated by DCC task when roster arrives or loco changes
+// Access is guarded by functionMutex (defined in DCCTask.cpp)
+// ---------------------------------------------------------------------------
+static const int MAX_LOCO_FUNCTIONS = 32;
+static const int FUNC_NAME_LEN      = 16;
+
+struct FunctionDef {
+    char name[FUNC_NAME_LEN];
+    bool momentary;
+};
+
+struct LocoFunctionData {
+    FunctionDef defs[MAX_LOCO_FUNCTIONS];
+    int32_t     states;
+    bool        valid;
+};
+
+// ---------------------------------------------------------------------------
 // DCC task → UI task  (events about command-station state)
 // ---------------------------------------------------------------------------
 enum class DCCEventType : uint8_t {
@@ -31,6 +49,7 @@ enum class DCCEventType : uint8_t {
     TRACK_POWER_ON,
     TRACK_POWER_OFF,
     CURRENT_UPDATE,  // track current reading in mA
+    FUNCTION_UPDATE, // function states changed; loco.address = DCC addr, value = int32 bitmask
 };
 
 struct DCCEvent {
@@ -49,10 +68,12 @@ enum class UICmdType : uint8_t {
     POWER_ON,
     POWER_OFF,
     ASSIGN_LOCO,   // reassign throttle slot to a different address
+    FUNCTION_CMD,  // send function on/off; index=slot, func=fn#, loco.forward=on/off
 };
 
 struct UICmd {
     UICmdType type;
-    uint8_t   index;  // throttle slot (0-3) for SET_THROTTLE
-    LocoState loco;   // valid for SET_THROTTLE
+    uint8_t   index;  // throttle slot (0-3)
+    uint8_t   func;   // function number for FUNCTION_CMD
+    LocoState loco;   // valid for SET_THROTTLE / ASSIGN_LOCO; loco.forward=on for FUNCTION_CMD
 };
