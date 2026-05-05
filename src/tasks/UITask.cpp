@@ -22,9 +22,9 @@ static void uiTask(void *param) {
 
     // Check for forced recalibration before splash (hold BTN_ROSTER at power-on)
 #if DISPLAY_480
-    pinMode(BTN_ROSTER, INPUT_PULLUP);
+    pinMode(ENC1_SW, INPUT_PULLUP);
     delay(50);
-    bool forceCalibration = (digitalRead(BTN_ROSTER) == LOW);
+    bool forceCalibration = (digitalRead(ENC1_SW) == LOW);
 #endif
 
     static Display display;
