@@ -343,13 +343,13 @@ static void uiTask(void *param) {
         // Momentary functions use press/release detection; everything else is a tap.
 #if DISPLAY_480
         {
-            static uint32_t lastTouchMs  = 0;
             static bool     prevTouched  = false;
             static int      heldFnNum    = -1;  // momentary fn number held (-1 = none)
             static int      heldSlot     = -1;  // throttle slot for held fn
             static int      heldBtnIdx   = -1;  // mini strip btnIdx, or -1 if function screen
             uint16_t tx = 0, ty = 0;
-            bool touched = display.getTouch(tx, ty);
+            bool touched  = display.getTouch(tx, ty);
+            bool touchDown = touched && !prevTouched;  // leading edge only — prevents re-fire while held
 
             // Release detection for momentary functions
             if (prevTouched && !touched && heldFnNum >= 0) {
@@ -370,14 +370,10 @@ static void uiTask(void *param) {
                 heldFnNum  = -1;
                 heldSlot   = -1;
                 heldBtnIdx = -1;
-                lastTouchMs = millis();  // debounce after release
             }
             prevTouched = touched;
 
-            // Shorter debounce on function screen so quick momentary taps register
-            uint32_t debounce = (activeScreen == Screen::FUNCTION) ? 60u : 280u;
-            if (touched && heldFnNum < 0 && (millis() - lastTouchMs) >= debounce) {
-                lastTouchMs = millis();
+            if (touchDown && heldFnNum < 0) {
                 bool wasSleeping = noteActivity();
                 if (!wasSleeping) {
                     if (ty < Display::HDR_H) {
